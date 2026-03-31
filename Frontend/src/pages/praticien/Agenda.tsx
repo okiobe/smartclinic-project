@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getAppointments,
+  updateAppointmentStatus,
   type Appointment,
+  type AppointmentStatus,
 } from "../../services/appointments.api";
 
 type StatutRendezVous = "Confirmé" | "En attente" | "Annulé" | "Terminé";
@@ -65,6 +67,7 @@ export default function Agenda() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   async function loadAgenda() {
@@ -83,6 +86,35 @@ export default function Agenda() {
       setAppointments([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleStatusUpdate(
+    appointmentId: number,
+    status: AppointmentStatus,
+  ) {
+    try {
+      setUpdatingId(appointmentId);
+      setError("");
+
+      const updatedAppointment = await updateAppointmentStatus(
+        appointmentId,
+        status,
+      );
+
+      setAppointments((current) =>
+        current.map((appointment) =>
+          appointment.id === appointmentId ? updatedAppointment : appointment,
+        ),
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la mise à jour du statut.";
+      setError(message);
+    } finally {
+      setUpdatingId(null);
     }
   }
 
@@ -210,7 +242,7 @@ export default function Agenda() {
                   return (
                     <div
                       key={dateKey}
-                      className={`min-h-[140px] rounded-xl border p-2 ${
+                      className={`min-h-[170px] rounded-xl border p-2 ${
                         inCurrentMonth
                           ? "border-slate-200 bg-white"
                           : "border-slate-100 bg-slate-50 text-slate-400"
@@ -226,7 +258,7 @@ export default function Agenda() {
                             Aucun rendez-vous
                           </div>
                         ) : (
-                          dayAppointments.slice(0, 4).map((appointment) => (
+                          dayAppointments.slice(0, 3).map((appointment) => (
                             <div
                               key={appointment.id}
                               className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
@@ -252,13 +284,47 @@ export default function Agenda() {
                                   {formatStatus(appointment.status)}
                                 </span>
                               </div>
+
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {appointment.status !== "CONFIRMED" && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleStatusUpdate(
+                                        appointment.id,
+                                        "CONFIRMED",
+                                      )
+                                    }
+                                    disabled={updatingId === appointment.id}
+                                    className="rounded-md bg-green-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+                                  >
+                                    Valider
+                                  </button>
+                                )}
+
+                                {appointment.status !== "CANCELLED" && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleStatusUpdate(
+                                        appointment.id,
+                                        "CANCELLED",
+                                      )
+                                    }
+                                    disabled={updatingId === appointment.id}
+                                    className="rounded-md bg-red-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                                  >
+                                    Annuler
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))
                         )}
 
-                        {dayAppointments.length > 4 && (
+                        {dayAppointments.length > 3 && (
                           <div className="text-xs text-slate-500">
-                            + {dayAppointments.length - 4} autre(s)
+                            + {dayAppointments.length - 3} autre(s)
                           </div>
                         )}
                       </div>

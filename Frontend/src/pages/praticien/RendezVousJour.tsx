@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getAppointments,
+  updateAppointmentStatus,
   type Appointment,
+  type AppointmentStatus,
 } from "../../services/appointments.api";
 
 type StatutRendezVous = "Confirmé" | "En attente" | "Annulé" | "Terminé";
@@ -13,6 +15,7 @@ type RendezVous = {
   patient: string;
   motif: string;
   statut: StatutRendezVous;
+  rawStatus: AppointmentStatus;
 };
 
 function formatStatus(status: string): StatutRendezVous {
@@ -45,6 +48,7 @@ function getTodayDate() {
 export default function RendezVousJour() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   const getBadgeClass = (statut: StatutRendezVous) => {
@@ -82,6 +86,35 @@ export default function RendezVousJour() {
     }
   }
 
+  async function handleStatusUpdate(
+    appointmentId: number,
+    status: AppointmentStatus,
+  ) {
+    try {
+      setUpdatingId(appointmentId);
+      setError("");
+
+      const updatedAppointment = await updateAppointmentStatus(
+        appointmentId,
+        status,
+      );
+
+      setAppointments((current) =>
+        current.map((appointment) =>
+          appointment.id === appointmentId ? updatedAppointment : appointment,
+        ),
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la mise à jour du statut.";
+      setError(message);
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   useEffect(() => {
     loadRendezVousJour();
   }, []);
@@ -98,6 +131,7 @@ export default function RendezVousJour() {
           patient: `${appointment.patient_first_name} ${appointment.patient_last_name}`,
           motif: appointment.reason?.trim() || appointment.service_name,
           statut: formatStatus(appointment.status),
+          rawStatus: appointment.status,
         }),
       );
   }, [appointments]);
@@ -137,6 +171,12 @@ export default function RendezVousJour() {
         </p>
       </div>
 
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
         <table className="min-w-full border-separate border-spacing-0">
           <thead>
@@ -152,6 +192,9 @@ export default function RendezVousJour() {
               </th>
               <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
                 Statut
+              </th>
+              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                Actions
               </th>
             </tr>
           </thead>
@@ -176,6 +219,42 @@ export default function RendezVousJour() {
                   >
                     {rdv.statut}
                   </span>
+                </td>
+                <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                  <div className="flex flex-wrap gap-2">
+                    {rdv.rawStatus !== "CONFIRMED" && (
+                      <button
+                        type="button"
+                        onClick={() => handleStatusUpdate(rdv.id, "CONFIRMED")}
+                        disabled={updatingId === rdv.id}
+                        className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Valider
+                      </button>
+                    )}
+
+                    {rdv.rawStatus !== "COMPLETED" && (
+                      <button
+                        type="button"
+                        onClick={() => handleStatusUpdate(rdv.id, "COMPLETED")}
+                        disabled={updatingId === rdv.id}
+                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Terminer
+                      </button>
+                    )}
+
+                    {rdv.rawStatus !== "CANCELLED" && (
+                      <button
+                        type="button"
+                        onClick={() => handleStatusUpdate(rdv.id, "CANCELLED")}
+                        disabled={updatingId === rdv.id}
+                        className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Annuler
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

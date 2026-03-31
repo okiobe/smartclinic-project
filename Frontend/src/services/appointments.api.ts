@@ -1,5 +1,11 @@
 import { apiRequest } from "./apiClient";
 
+export type AppointmentStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "CANCELLED"
+  | "COMPLETED";
+
 export type Appointment = {
   id: number;
 
@@ -19,7 +25,7 @@ export type Appointment = {
   appointment_date: string;
   start_time: string;
   end_time: string;
-  status: string;
+  status: AppointmentStatus;
   reason: string;
   created_at?: string;
 };
@@ -31,7 +37,7 @@ export type CreateAppointmentPayload = {
   appointment_date: string;
   start_time: string;
   end_time: string;
-  status?: string;
+  status?: AppointmentStatus;
   reason?: string;
 };
 
@@ -49,5 +55,15 @@ export async function getAppointments(
 ): Promise<Appointment[]> {
   return apiRequest<Appointment[]>(endpoint, {
     method: "GET",
+  });
+}
+
+export async function updateAppointmentStatus(
+  appointmentId: number,
+  status: AppointmentStatus,
+): Promise<Appointment> {
+  return apiRequest<Appointment>(`/appointments/${appointmentId}/status/`, {
+    method: "PATCH",
+    body: { status },
   });
 }

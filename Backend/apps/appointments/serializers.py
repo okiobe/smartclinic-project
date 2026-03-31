@@ -133,6 +133,24 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class AppointmentStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Appointment
+        fields = ("status",)
+
+    def validate_status(self, value):
+        allowed_statuses = {
+            Appointment.Status.PENDING,
+            Appointment.Status.CONFIRMED,
+            Appointment.Status.CANCELLED,
+            Appointment.Status.COMPLETED,
+        }
+
+        if value not in allowed_statuses:
+            raise serializers.ValidationError("Statut de rendez-vous invalide.")
+
+        return value
+
 class SoapNoteSerializer(serializers.ModelSerializer):
     class Meta:
         model = SoapNote

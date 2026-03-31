@@ -1,6 +1,11 @@
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
 from .models import Appointment
-from .serializers import AppointmentSerializer, AppointmentCreateSerializer
+from .serializers import (
+    AppointmentSerializer,
+    AppointmentCreateSerializer,
+    AppointmentStatusUpdateSerializer,
+)
 
 
 class AppointmentListCreateView(generics.ListCreateAPIView):
@@ -15,7 +20,6 @@ class AppointmentListCreateView(generics.ListCreateAPIView):
             "service",
         )
 
-        # Filtrage par rôle
         if getattr(user, "role", None) == "PATIENT":
             if hasattr(user, "patient_profile"):
                 queryset = queryset.filter(patient=user.patient_profile)
@@ -34,7 +38,6 @@ class AppointmentListCreateView(generics.ListCreateAPIView):
         else:
             return Appointment.objects.none()
 
-        # Filtres optionnels
         patient_id = self.request.query_params.get("patient")
         practitioner_id = self.request.query_params.get("practitioner")
         appointment_date = self.request.query_params.get("date")
@@ -83,3 +86,44 @@ class AppointmentDetailView(generics.RetrieveAPIView):
             return queryset
 
         return Appointment.objects.none()
+
+
+class AppointmentStatusUpdateView(generics.UpdateAPIView):
+    serializer_class = AppointmentStatusUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["patch"]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        queryset = Appointment.objects.select_related(
+            "patient__user",
+            "practitioner__user",
+            "service",
+        )
+
+        if getattr(user, "role", None) == "PRACTITIONER":
+            if hasattr(user, "practitioner_profile"):
+                return queryset.filter(practitioner=user.practitioner_profile)
+            return Appointment.objects.none()
+
+        if getattr(user, "role", None) == "ADMIN":
+            return queryset
+
+        return Appointment.objects.none()
+
+    def patch(self, request, *args, **kwargs):
+        appointment = self.get_object()
+
+        serializer = self.get_serializer(
+            appointment,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(
+            AppointmentSerializer(appointment).data,
+            status=status.HTTP_200_OK,
+        )

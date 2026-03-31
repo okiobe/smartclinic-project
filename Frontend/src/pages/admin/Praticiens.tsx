@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   createAdminPractitioner,
   deleteAdminPractitioner,
@@ -68,6 +69,8 @@ function practitionerToEditForm(practitioner: Practitioner): EditForm {
 }
 
 export default function Praticiens() {
+  const navigate = useNavigate();
+
   const [practitioners, setPractitioners] = useState<Practitioner[]>([]);
   const [services, setServices] = useState<Service[]>([]);
 
@@ -644,6 +647,16 @@ export default function Praticiens() {
                       className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5"
                     >
                       Modifier
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate(`/admin/practitioners/${p.id}/availabilities`)
+                      }
+                      className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5"
+                    >
+                      Disponibilités
                     </button>
 
                     <button

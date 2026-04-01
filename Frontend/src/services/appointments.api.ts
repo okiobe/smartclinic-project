@@ -1,5 +1,22 @@
 import { apiRequest } from "./apiClient";
 
+export type SoapNote = {
+  id: number;
+  appointment: number;
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type AppointmentStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "CANCELLED"
+  | "COMPLETED";
+
 export type Appointment = {
   id: number;
 
@@ -19,20 +36,26 @@ export type Appointment = {
   appointment_date: string;
   start_time: string;
   end_time: string;
-  status: string;
+  status: AppointmentStatus;
   reason: string;
   created_at?: string;
+
+  soap_note?: SoapNote | null;
 };
 
 export type CreateAppointmentPayload = {
-  patient: number;
+  patient?: number;
   practitioner: number;
   service: number;
   appointment_date: string;
   start_time: string;
   end_time: string;
-  status?: string;
+  status?: AppointmentStatus;
   reason?: string;
+};
+
+export type UpdateAppointmentStatusPayload = {
+  status: AppointmentStatus;
 };
 
 export async function createAppointment(
@@ -50,4 +73,40 @@ export async function getAppointments(
   return apiRequest<Appointment[]>(endpoint, {
     method: "GET",
   });
+}
+
+export async function getAppointmentDetail(
+  appointmentId: number,
+): Promise<Appointment> {
+  return apiRequest<Appointment>(`/appointments/${appointmentId}/`, {
+    method: "GET",
+  });
+}
+
+export async function updateAppointmentStatus(
+  appointmentId: number,
+  payload: UpdateAppointmentStatusPayload,
+): Promise<Appointment> {
+  return apiRequest<Appointment>(`/appointments/${appointmentId}/status/`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function confirmAppointment(
+  appointmentId: number,
+): Promise<Appointment> {
+  return updateAppointmentStatus(appointmentId, { status: "CONFIRMED" });
+}
+
+export async function cancelAppointment(
+  appointmentId: number,
+): Promise<Appointment> {
+  return updateAppointmentStatus(appointmentId, { status: "CANCELLED" });
+}
+
+export async function completeAppointment(
+  appointmentId: number,
+): Promise<Appointment> {
+  return updateAppointmentStatus(appointmentId, { status: "COMPLETED" });
 }

@@ -1,19 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getAppointments,
+  confirmAppointment,
+  cancelAppointment,
+  completeAppointment,
   type Appointment,
 } from "../../services/appointments.api";
 
 type StatutRendezVous = "Confirmé" | "En attente" | "Annulé" | "Terminé";
-
-type RendezVous = {
-  id: number;
-  heureDebut: string;
-  heureFin: string;
-  patient: string;
-  motif: string;
-  statut: StatutRendezVous;
-};
 
 function formatStatus(status: string): StatutRendezVous {
   switch (status) {
@@ -46,6 +40,7 @@ export default function RendezVousJour() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   const getBadgeClass = (statut: StatutRendezVous) => {
     switch (statut) {
@@ -89,39 +84,116 @@ export default function RendezVousJour() {
   const rendezVous = useMemo(() => {
     return appointments
       .filter((appointment) => appointment.appointment_date === getTodayDate())
-      .sort((a, b) => a.start_time.localeCompare(b.start_time))
-      .map(
-        (appointment): RendezVous => ({
-          id: appointment.id,
-          heureDebut: formatTime(appointment.start_time),
-          heureFin: formatTime(appointment.end_time),
-          patient: `${appointment.patient_first_name} ${appointment.patient_last_name}`,
-          motif: appointment.reason?.trim() || appointment.service_name,
-          statut: formatStatus(appointment.status),
-        }),
-      );
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
   }, [appointments]);
+
+  async function handleConfirm(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      await confirmAppointment(appointmentId);
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de confirmer ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleCancel(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      await cancelAppointment(appointmentId);
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d’annuler ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleComplete(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      await completeAppointment(appointmentId);
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de terminer ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  function renderActions(appointment: Appointment) {
+    const isLoading = actionLoadingId === appointment.id;
+
+    if (appointment.status === "PENDING") {
+      return (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => handleConfirm(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Confirmer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCancel(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
+
+    if (appointment.status === "CONFIRMED") {
+      return (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => handleComplete(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Terminer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCancel(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
+
+    return <span className="text-xs text-slate-400">Aucune action</span>;
+  }
 
   if (loading) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
         Chargement des rendez-vous du jour...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-600">
-        {error}
-      </div>
-    );
-  }
-
-  if (rendezVous.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
-        Aucun rendez-vous pour aujourd’hui.
       </div>
     );
   }
@@ -137,51 +209,75 @@ export default function RendezVousJour() {
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        <table className="min-w-full border-separate border-spacing-0">
-          <thead>
-            <tr>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Heure
-              </th>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Patient
-              </th>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Motif
-              </th>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Statut
-              </th>
-            </tr>
-          </thead>
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
-          <tbody>
-            {rendezVous.map((rdv) => (
-              <tr key={rdv.id} className="hover:bg-slate-50">
-                <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
-                  {rdv.heureDebut} - {rdv.heureFin}
-                </td>
-                <td className="border-b border-slate-100 px-4 py-4 text-sm font-medium text-slate-800">
-                  {rdv.patient}
-                </td>
-                <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
-                  {rdv.motif}
-                </td>
-                <td className="border-b border-slate-100 px-4 py-4 text-sm">
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getBadgeClass(
-                      rdv.statut,
-                    )}`}
-                  >
-                    {rdv.statut}
-                  </span>
-                </td>
+      {rendezVous.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
+          Aucun rendez-vous pour aujourd’hui.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <table className="min-w-full border-separate border-spacing-0">
+            <thead>
+              <tr>
+                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                  Heure
+                </th>
+                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                  Patient
+                </th>
+                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                  Motif
+                </th>
+                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                  Statut
+                </th>
+                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                  Actions
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+
+            <tbody>
+              {rendezVous.map((appointment) => {
+                const statut = formatStatus(appointment.status);
+
+                return (
+                  <tr key={appointment.id} className="hover:bg-slate-50">
+                    <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
+                      {formatTime(appointment.start_time)} -{" "}
+                      {formatTime(appointment.end_time)}
+                    </td>
+                    <td className="border-b border-slate-100 px-4 py-4 text-sm font-medium text-slate-800">
+                      {appointment.patient_first_name}{" "}
+                      {appointment.patient_last_name}
+                    </td>
+                    <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
+                      {appointment.reason?.trim() || appointment.service_name}
+                    </td>
+                    <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getBadgeClass(
+                          statut,
+                        )}`}
+                      >
+                        {statut}
+                      </span>
+                    </td>
+                    <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                      {renderActions(appointment)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

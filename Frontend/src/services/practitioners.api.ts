@@ -179,3 +179,33 @@ export async function getMyPractitionerAvailabilities(): Promise<
     method: "GET",
   });
 }
+
+export async function createMyPractitionerAvailability(
+  payload: CreateAvailabilityPayload,
+): Promise<AvailabilityRule> {
+  return apiRequest<AvailabilityRule>("/practitioner/me/availabilities/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateMyPractitionerAvailability(
+  availabilityId: number,
+  payload: UpdateAvailabilityPayload,
+): Promise<AvailabilityRule> {
+  return apiRequest<AvailabilityRule>(
+    `/practitioner/me/availabilities/${availabilityId}/`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function deleteMyPractitionerAvailability(
+  availabilityId: number,
+): Promise<void> {
+  await apiRequest(`/practitioner/me/availabilities/${availabilityId}/`, {
+    method: "DELETE",
+  });
+}

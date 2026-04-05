@@ -333,7 +333,7 @@ export default function Agenda() {
                             Aucun rendez-vous
                           </div>
                         ) : (
-                          dayAppointments.slice(0, 4).map((appointment) => (
+                          dayAppointments.slice(0, 3).map((appointment) => (
                             <div
                               key={appointment.id}
                               className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
@@ -368,9 +368,9 @@ export default function Agenda() {
                           ))
                         )}
 
-                        {dayAppointments.length > 4 && (
+                        {dayAppointments.length > 3 && (
                           <div className="text-xs text-slate-500">
-                            + {dayAppointments.length - 4} autre(s)
+                            + {dayAppointments.length - 3} autre(s)
                           </div>
                         )}
                       </div>

@@ -1,19 +1,13 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.views import APIView
 
 from .models import Appointment
-from .serializers import (
-    AppointmentSerializer,
-    AppointmentCreateSerializer,
-    AppointmentStatusUpdateSerializer,
-)
+from .serializers import AppointmentSerializer, AppointmentCreateSerializer
 
 
-class AppointmentListCreateView(generics.ListCreateAPIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
+class AppointmentAccessMixin:
+    def get_scoped_queryset(self):
         user = self.request.user
 
         queryset = Appointment.objects.select_related(
@@ -24,26 +18,29 @@ class AppointmentListCreateView(generics.ListCreateAPIView):
 
         if getattr(user, "role", None) == "PATIENT":
             if hasattr(user, "patient_profile"):
-                queryset = queryset.filter(patient=user.patient_profile)
-            else:
-                return Appointment.objects.none()
-
-        elif getattr(user, "role", None) == "PRACTITIONER":
-            if hasattr(user, "practitioner_profile"):
-                queryset = queryset.filter(practitioner=user.practitioner_profile)
-            else:
-                return Appointment.objects.none()
-
-        elif getattr(user, "role", None) == "ADMIN":
-            pass
-
-        else:
+                return queryset.filter(patient=user.patient_profile)
             return Appointment.objects.none()
+
+        if getattr(user, "role", None) == "PRACTITIONER":
+            if hasattr(user, "practitioner_profile"):
+                return queryset.filter(practitioner=user.practitioner_profile)
+            return Appointment.objects.none()
+
+        if getattr(user, "role", None) == "ADMIN":
+            return queryset
+
+        return Appointment.objects.none()
+
+
+class AppointmentListCreateView(AppointmentAccessMixin, generics.ListCreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = self.get_scoped_queryset()
 
         patient_id = self.request.query_params.get("patient")
         practitioner_id = self.request.query_params.get("practitioner")
         appointment_date = self.request.query_params.get("date")
-        appointment_status = self.request.query_params.get("status")
 
         if patient_id:
             queryset = queryset.filter(patient_id=patient_id)
@@ -54,9 +51,6 @@ class AppointmentListCreateView(generics.ListCreateAPIView):
         if appointment_date:
             queryset = queryset.filter(appointment_date=appointment_date)
 
-        if appointment_status:
-            queryset = queryset.filter(status=appointment_status)
-
         return queryset.order_by("appointment_date", "start_time")
 
     def get_serializer_class(self):
@@ -64,122 +58,65 @@ class AppointmentListCreateView(generics.ListCreateAPIView):
             return AppointmentCreateSerializer
         return AppointmentSerializer
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["request"] = self.request
-        return context
 
-    def perform_create(self, serializer):
-        user = self.request.user
-        role = getattr(user, "role", None)
-
-        if role == "PATIENT":
-            if not hasattr(user, "patient_profile"):
-                raise ValidationError(
-                    {"detail": "Aucun profil patient associé à cet utilisateur."}
-                )
-            serializer.save(patient=user.patient_profile)
-            return
-
-        if role == "ADMIN":
-            serializer.save()
-            return
-
-        raise PermissionDenied(
-            "Seuls un patient ou un administrateur peuvent créer un rendez-vous."
-        )
-
-
-class AppointmentDetailView(generics.RetrieveAPIView):
+class AppointmentDetailView(AppointmentAccessMixin, generics.RetrieveAPIView):
     serializer_class = AppointmentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
-
-        queryset = Appointment.objects.select_related(
-            "patient__user",
-            "practitioner__user",
-            "service",
-        )
-
-        if getattr(user, "role", None) == "PATIENT":
-            if hasattr(user, "patient_profile"):
-                return queryset.filter(patient=user.patient_profile)
-            return Appointment.objects.none()
-
-        if getattr(user, "role", None) == "PRACTITIONER":
-            if hasattr(user, "practitioner_profile"):
-                return queryset.filter(practitioner=user.practitioner_profile)
-            return Appointment.objects.none()
-
-        if getattr(user, "role", None) == "ADMIN":
-            return queryset
-
-        return Appointment.objects.none()
+        return self.get_scoped_queryset()
 
 
-class AppointmentStatusUpdateView(generics.UpdateAPIView):
-    serializer_class = AppointmentStatusUpdateSerializer
+class AppointmentStatusUpdateView(AppointmentAccessMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
-    http_method_names = ["patch"]
 
-    def get_queryset(self):
-        user = self.request.user
+    def patch(self, request, pk):
+        appointment = self.get_scoped_queryset().filter(pk=pk).first()
 
-        queryset = Appointment.objects.select_related(
-            "patient__user",
-            "practitioner__user",
-            "service",
-        )
-
-        if getattr(user, "role", None) == "PATIENT":
-            if hasattr(user, "patient_profile"):
-                return queryset.filter(patient=user.patient_profile)
-            return Appointment.objects.none()
-
-        if getattr(user, "role", None) == "PRACTITIONER":
-            if hasattr(user, "practitioner_profile"):
-                return queryset.filter(practitioner=user.practitioner_profile)
-            return Appointment.objects.none()
-
-        if getattr(user, "role", None) == "ADMIN":
-            return queryset
-
-        return Appointment.objects.none()
-
-    def patch(self, request, *args, **kwargs):
-        appointment = self.get_object()
-        user = request.user
-        role = getattr(user, "role", None)
-        new_status = request.data.get("status")
-
-        if not new_status:
-            raise ValidationError({"status": "Le champ status est requis."})
-
-        allowed_statuses = {
-            "PATIENT": {"CANCELLED"},
-            "PRACTITIONER": {"CONFIRMED", "CANCELLED", "COMPLETED"},
-            "ADMIN": {"PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"},
-        }
-
-        if role not in allowed_statuses:
-            raise PermissionDenied("Vous n'avez pas la permission de modifier ce statut.")
-
-        if new_status not in allowed_statuses[role]:
-            raise PermissionDenied(
-                f"Le rôle {role} ne peut pas définir le statut '{new_status}'."
+        if not appointment:
+            return Response(
+                {"detail": "Rendez-vous introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = self.get_serializer(
-            appointment,
-            data=request.data,
-            partial=True,
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        new_status = request.data.get("status")
+        allowed_statuses = {"PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"}
 
-        appointment.refresh_from_db()
+        if new_status not in allowed_statuses:
+            return Response(
+                {"detail": "Statut invalide."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appointment.status = new_status
+        appointment.save(update_fields=["status"])
+
+        return Response(
+            AppointmentSerializer(appointment).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class AppointmentCancelView(AppointmentAccessMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        appointment = self.get_scoped_queryset().filter(pk=pk).first()
+
+        if not appointment:
+            return Response(
+                {"detail": "Rendez-vous introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if appointment.status not in {"PENDING", "CONFIRMED"}:
+            return Response(
+                {"detail": "Ce rendez-vous ne peut plus être annulé."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appointment.status = "CANCELLED"
+        appointment.save(update_fields=["status"])
 
         return Response(
             AppointmentSerializer(appointment).data,

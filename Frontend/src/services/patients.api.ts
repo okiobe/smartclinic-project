@@ -11,6 +11,15 @@ export type PatientProfile = {
   created_at: string;
 };
 
+export type UpdatePatientProfilePayload = {
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  date_of_birth?: string | null;
+  address?: string;
+};
+
 export type AdminPatient = {
   id: number;
   email: string;
@@ -22,6 +31,15 @@ export type AdminPatient = {
 export async function getMyPatientProfile(): Promise<PatientProfile> {
   return apiRequest<PatientProfile>("/patients/me/", {
     method: "GET",
+  });
+}
+
+export async function updateMyPatientProfile(
+  payload: UpdatePatientProfilePayload,
+): Promise<PatientProfile> {
+  return apiRequest<PatientProfile>("/patients/me/", {
+    method: "PATCH",
+    body: payload,
   });
 }
 

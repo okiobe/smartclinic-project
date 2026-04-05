@@ -1,8 +1,14 @@
 import { apiRequest } from "./apiClient";
 
+export type AppointmentStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "CANCELLED"
+  | "COMPLETED";
+
 export type SoapNote = {
   id: number;
-  appointment: number;
+  appointment?: number;
   subjective: string;
   objective: string;
   assessment: string;
@@ -10,12 +16,6 @@ export type SoapNote = {
   created_at?: string;
   updated_at?: string;
 };
-
-export type AppointmentStatus =
-  | "PENDING"
-  | "CONFIRMED"
-  | "CANCELLED"
-  | "COMPLETED";
 
 export type Appointment = {
   id: number;
@@ -93,6 +93,7 @@ export async function updateAppointmentStatus(
   });
 }
 
+// Helpers métier (IMPORTANT pour ton UI)
 export async function confirmAppointment(
   appointmentId: number,
 ): Promise<Appointment> {

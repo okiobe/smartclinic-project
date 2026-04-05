@@ -4,10 +4,20 @@ import {
   confirmAppointment,
   cancelAppointment,
   completeAppointment,
+  createAppointmentSoapNote,
+  updateAppointmentSoapNote,
   type Appointment,
+  type SoapNotePayload,
 } from "../../services/appointments.api";
 
 type StatutRendezVous = "Confirmé" | "En attente" | "Annulé" | "Terminé";
+
+type SoapFormState = {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+};
 
 function formatStatus(status: string): StatutRendezVous {
   switch (status) {
@@ -36,11 +46,27 @@ function getTodayDate() {
   return `${year}-${month}-${day}`;
 }
 
+function getInitialSoapForm(appointment: Appointment): SoapFormState {
+  return {
+    subjective: appointment.soap_note?.subjective ?? "",
+    objective: appointment.soap_note?.objective ?? "",
+    assessment: appointment.soap_note?.assessment ?? "",
+    plan: appointment.soap_note?.plan ?? "",
+  };
+}
+
 export default function RendezVousJour() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+
+  const [openSoapAppointmentId, setOpenSoapAppointmentId] = useState<
+    number | null
+  >(null);
+  const [soapForms, setSoapForms] = useState<Record<number, SoapFormState>>({});
+  const [soapLoadingId, setSoapLoadingId] = useState<number | null>(null);
+  const [soapMessage, setSoapMessage] = useState("");
 
   const getBadgeClass = (statut: StatutRendezVous) => {
     switch (statut) {
@@ -65,6 +91,20 @@ export default function RendezVousJour() {
       const today = getTodayDate();
       const data = await getAppointments(`/appointments/?date=${today}`);
       setAppointments(data);
+
+      setSoapForms((prev) => {
+        const next = { ...prev };
+
+        for (const appointment of data) {
+          if (!next[appointment.id]) {
+            next[appointment.id] = getInitialSoapForm(appointment);
+          } else if (appointment.soap_note) {
+            next[appointment.id] = getInitialSoapForm(appointment);
+          }
+        }
+
+        return next;
+      });
     } catch (err) {
       const message =
         err instanceof Error
@@ -91,6 +131,7 @@ export default function RendezVousJour() {
     try {
       setActionLoadingId(appointmentId);
       setError("");
+      setSoapMessage("");
       await confirmAppointment(appointmentId);
       await loadRendezVousJour();
     } catch (err) {
@@ -108,6 +149,7 @@ export default function RendezVousJour() {
     try {
       setActionLoadingId(appointmentId);
       setError("");
+      setSoapMessage("");
       await cancelAppointment(appointmentId);
       await loadRendezVousJour();
     } catch (err) {
@@ -125,6 +167,7 @@ export default function RendezVousJour() {
     try {
       setActionLoadingId(appointmentId);
       setError("");
+      setSoapMessage("");
       await completeAppointment(appointmentId);
       await loadRendezVousJour();
     } catch (err) {
@@ -135,6 +178,77 @@ export default function RendezVousJour() {
       );
     } finally {
       setActionLoadingId(null);
+    }
+  }
+
+  function toggleSoapEditor(appointment: Appointment) {
+    setError("");
+    setSoapMessage("");
+
+    setSoapForms((prev) => ({
+      ...prev,
+      [appointment.id]: getInitialSoapForm(appointment),
+    }));
+
+    setOpenSoapAppointmentId((current) =>
+      current === appointment.id ? null : appointment.id,
+    );
+  }
+
+  function handleSoapChange(
+    appointmentId: number,
+    field: keyof SoapFormState,
+    value: string,
+  ) {
+    setSoapForms((prev) => ({
+      ...prev,
+      [appointmentId]: {
+        ...(prev[appointmentId] ?? {
+          subjective: "",
+          objective: "",
+          assessment: "",
+          plan: "",
+        }),
+        [field]: value,
+      },
+    }));
+
+    setError("");
+    setSoapMessage("");
+  }
+
+  async function handleSoapSubmit(appointment: Appointment) {
+    const form = soapForms[appointment.id] ?? getInitialSoapForm(appointment);
+
+    const payload: SoapNotePayload = {
+      subjective: form.subjective.trim(),
+      objective: form.objective.trim(),
+      assessment: form.assessment.trim(),
+      plan: form.plan.trim(),
+    };
+
+    try {
+      setSoapLoadingId(appointment.id);
+      setError("");
+      setSoapMessage("");
+
+      if (appointment.soap_note) {
+        await updateAppointmentSoapNote(appointment.id, payload);
+        setSoapMessage("Note SOAP mise à jour avec succès.");
+      } else {
+        await createAppointmentSoapNote(appointment.id, payload);
+        setSoapMessage("Note SOAP enregistrée avec succès.");
+      }
+
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d’enregistrer la note SOAP.",
+      );
+    } finally {
+      setSoapLoadingId(null);
     }
   }
 
@@ -215,67 +329,226 @@ export default function RendezVousJour() {
         </div>
       )}
 
+      {soapMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {soapMessage}
+        </div>
+      )}
+
       {rendezVous.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
           Aucun rendez-vous pour aujourd’hui.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <table className="min-w-full border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                  Heure
-                </th>
-                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                  Patient
-                </th>
-                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                  Motif
-                </th>
-                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                  Statut
-                </th>
-                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                  Actions
-                </th>
-              </tr>
-            </thead>
+        <div className="space-y-4">
+          {rendezVous.map((appointment) => {
+            const statut = formatStatus(appointment.status);
+            const isSoapOpen = openSoapAppointmentId === appointment.id;
+            const soapForm =
+              soapForms[appointment.id] ?? getInitialSoapForm(appointment);
+            const isSoapSaving = soapLoadingId === appointment.id;
 
-            <tbody>
-              {rendezVous.map((appointment) => {
-                const statut = formatStatus(appointment.status);
+            return (
+              <div
+                key={appointment.id}
+                className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"
+              >
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border-separate border-spacing-0">
+                    <thead>
+                      <tr>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Heure
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Patient
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Motif
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Statut
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Actions
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Note SOAP
+                        </th>
+                      </tr>
+                    </thead>
 
-                return (
-                  <tr key={appointment.id} className="hover:bg-slate-50">
-                    <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
-                      {formatTime(appointment.start_time)} -{" "}
-                      {formatTime(appointment.end_time)}
-                    </td>
-                    <td className="border-b border-slate-100 px-4 py-4 text-sm font-medium text-slate-800">
-                      {appointment.patient_first_name}{" "}
-                      {appointment.patient_last_name}
-                    </td>
-                    <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
-                      {appointment.reason?.trim() || appointment.service_name}
-                    </td>
-                    <td className="border-b border-slate-100 px-4 py-4 text-sm">
-                      <span
-                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getBadgeClass(
-                          statut,
-                        )}`}
+                    <tbody>
+                      <tr className="hover:bg-slate-50">
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
+                          {formatTime(appointment.start_time)} -{" "}
+                          {formatTime(appointment.end_time)}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm font-medium text-slate-800">
+                          {appointment.patient_first_name}{" "}
+                          {appointment.patient_last_name}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
+                          {appointment.reason?.trim() ||
+                            appointment.service_name}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getBadgeClass(
+                              statut,
+                            )}`}
+                          >
+                            {statut}
+                          </span>
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                          {renderActions(appointment)}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => toggleSoapEditor(appointment)}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            {appointment.soap_note
+                              ? "Voir / Modifier"
+                              : "Rédiger"}
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {isSoapOpen && (
+                  <div className="border-t border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg font-semibold text-slate-900">
+                          Note SOAP
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {appointment.soap_note
+                            ? "Consultez ou modifiez la note SOAP associée à ce rendez-vous."
+                            : "Rédigez la note SOAP associée à ce rendez-vous."}
+                        </p>
+                      </div>
+
+                      {appointment.soap_note?.updated_at && (
+                        <div className="text-xs text-slate-500">
+                          Dernière mise à jour :{" "}
+                          {new Date(
+                            appointment.soap_note.updated_at,
+                          ).toLocaleString("fr-CA")}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid gap-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Subjectif
+                        </label>
+                        <textarea
+                          value={soapForm.subjective}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "subjective",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Symptômes rapportés par le patient, ressenti, historique pertinent..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Objectif
+                        </label>
+                        <textarea
+                          value={soapForm.objective}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "objective",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Observations cliniques, signes mesurables, examen objectif..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Analyse
+                        </label>
+                        <textarea
+                          value={soapForm.assessment}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "assessment",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Interprétation clinique, évaluation, hypothèses..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Plan
+                        </label>
+                        <textarea
+                          value={soapForm.plan}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "plan",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Plan de traitement, recommandations, suivi..."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSoapSubmit(appointment)}
+                        disabled={isSoapSaving}
+                        className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
                       >
-                        {statut}
-                      </span>
-                    </td>
-                    <td className="border-b border-slate-100 px-4 py-4 text-sm">
-                      {renderActions(appointment)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        {isSoapSaving
+                          ? "Enregistrement..."
+                          : appointment.soap_note
+                            ? "Mettre à jour la note SOAP"
+                            : "Enregistrer la note SOAP"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOpenSoapAppointmentId(null)}
+                        className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Fermer
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

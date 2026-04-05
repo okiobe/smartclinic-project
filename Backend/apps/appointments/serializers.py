@@ -18,7 +18,7 @@ class SoapNoteSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "appointment", "created_at", "updated_at")
 
 
 class AppointmentSerializer(serializers.ModelSerializer):

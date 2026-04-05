@@ -4,6 +4,7 @@ from .views import (
     AppointmentDetailView,
     AppointmentStatusUpdateView,
     AppointmentCancelView,
+    AppointmentSoapNoteView,
 )
 
 urlpatterns = [
@@ -18,5 +19,10 @@ urlpatterns = [
         "<int:pk>/cancel/",
         AppointmentCancelView.as_view(),
         name="appointment-cancel",
+    ),
+    path(
+        "<int:pk>/soap-note/",
+        AppointmentSoapNoteView.as_view(),
+        name="appointment-soap-note",
     ),
 ]

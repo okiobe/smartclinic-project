@@ -17,6 +17,13 @@ export type SoapNote = {
   updated_at?: string;
 };
 
+export type SoapNotePayload = {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+};
+
 export type Appointment = {
   id: number;
 
@@ -93,7 +100,6 @@ export async function updateAppointmentStatus(
   });
 }
 
-// Helpers métier (IMPORTANT pour ton UI)
 export async function confirmAppointment(
   appointmentId: number,
 ): Promise<Appointment> {
@@ -110,4 +116,32 @@ export async function completeAppointment(
   appointmentId: number,
 ): Promise<Appointment> {
   return updateAppointmentStatus(appointmentId, { status: "COMPLETED" });
+}
+
+export async function getAppointmentSoapNote(
+  appointmentId: number,
+): Promise<SoapNote> {
+  return apiRequest<SoapNote>(`/appointments/${appointmentId}/soap-note/`, {
+    method: "GET",
+  });
+}
+
+export async function createAppointmentSoapNote(
+  appointmentId: number,
+  payload: SoapNotePayload,
+): Promise<SoapNote> {
+  return apiRequest<SoapNote>(`/appointments/${appointmentId}/soap-note/`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateAppointmentSoapNote(
+  appointmentId: number,
+  payload: Partial<SoapNotePayload>,
+): Promise<SoapNote> {
+  return apiRequest<SoapNote>(`/appointments/${appointmentId}/soap-note/`, {
+    method: "PATCH",
+    body: payload,
+  });
 }

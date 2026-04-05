@@ -2,8 +2,12 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Appointment
-from .serializers import AppointmentSerializer, AppointmentCreateSerializer
+from .models import Appointment, SoapNote
+from .serializers import (
+    AppointmentSerializer,
+    AppointmentCreateSerializer,
+    SoapNoteSerializer,
+)
 
 
 class AppointmentAccessMixin:
@@ -14,6 +18,7 @@ class AppointmentAccessMixin:
             "patient__user",
             "practitioner__user",
             "service",
+            "soap_note",
         )
 
         if getattr(user, "role", None) == "PATIENT":
@@ -122,3 +127,89 @@ class AppointmentCancelView(AppointmentAccessMixin, APIView):
             AppointmentSerializer(appointment).data,
             status=status.HTTP_200_OK,
         )
+
+
+class AppointmentSoapNoteView(AppointmentAccessMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_appointment(self, pk):
+        return self.get_scoped_queryset().filter(pk=pk).first()
+
+    def get(self, request, pk):
+        appointment = self.get_appointment(pk)
+
+        if not appointment:
+            return Response(
+                {"detail": "Rendez-vous introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        soap_note = getattr(appointment, "soap_note", None)
+
+        if not soap_note:
+            return Response(
+                {"detail": "Aucune note SOAP pour ce rendez-vous."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(SoapNoteSerializer(soap_note).data, status=status.HTTP_200_OK)
+
+    def post(self, request, pk):
+        appointment = self.get_appointment(pk)
+
+        if not appointment:
+            return Response(
+                {"detail": "Rendez-vous introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if getattr(request.user, "role", None) != "PRACTITIONER":
+            return Response(
+                {"detail": "Seul le praticien peut rédiger une note SOAP."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if getattr(appointment, "soap_note", None):
+            return Response(
+                {"detail": "Une note SOAP existe déjà pour ce rendez-vous."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = SoapNoteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(appointment=appointment)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def patch(self, request, pk):
+        appointment = self.get_appointment(pk)
+
+        if not appointment:
+            return Response(
+                {"detail": "Rendez-vous introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if getattr(request.user, "role", None) != "PRACTITIONER":
+            return Response(
+                {"detail": "Seul le praticien peut modifier une note SOAP."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        soap_note = getattr(appointment, "soap_note", None)
+
+        if not soap_note:
+            return Response(
+                {"detail": "Aucune note SOAP à modifier pour ce rendez-vous."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = SoapNoteSerializer(
+            soap_note,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -5,6 +5,22 @@ from .models import Appointment, SoapNote, Notification
 from apps.availability.models import AvailabilityRule
 
 
+class SoapNoteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SoapNote
+        fields = (
+            "id",
+            "appointment",
+            "subjective",
+            "objective",
+            "assessment",
+            "plan",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
 class AppointmentSerializer(serializers.ModelSerializer):
     # Patient
     patient_email = serializers.EmailField(source="patient.user.email", read_only=True)
@@ -32,34 +48,32 @@ class AppointmentSerializer(serializers.ModelSerializer):
     # Service
     service_name = serializers.CharField(source="service.name", read_only=True)
 
+    # Note SOAP
+    soap_note = SoapNoteSerializer(read_only=True)
+
     class Meta:
         model = Appointment
         fields = (
             "id",
-
             "patient",
             "patient_email",
             "patient_first_name",
             "patient_last_name",
-
             "practitioner",
             "practitioner_email",
             "practitioner_first_name",
             "practitioner_last_name",
-
             "service",
             "service_name",
-
             "appointment_date",
             "start_time",
             "end_time",
             "status",
             "reason",
             "created_at",
+            "soap_note",
         )
-        read_only_fields = ("id", "created_at")
-
-
+        read_only_fields = ("id", "created_at", "soap_note")
 
 
 class AppointmentCreateSerializer(serializers.ModelSerializer):
@@ -82,23 +96,19 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
         practitioner = attrs.get("practitioner")
         appointment_date = attrs.get("appointment_date")
 
-        # Vérifier les champs obligatoires
         if not all([start_time, end_time, practitioner, appointment_date]):
             return attrs
 
-        # Vérifier cohérence horaire
         if start_time >= end_time:
             raise serializers.ValidationError(
                 {"end_time": "L'heure de fin doit être après l'heure de début."}
             )
 
-        # Empêcher les rendez-vous dans le passé
         if appointment_date < timezone.now().date():
             raise serializers.ValidationError(
                 {"appointment_date": "Impossible de réserver dans le passé."}
             )
 
-        # Vérifier disponibilité du praticien
         weekday = appointment_date.isoweekday()
 
         availability = AvailabilityRule.objects.filter(
@@ -114,7 +124,6 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
                 {"detail": "Le praticien n'est pas disponible sur ce créneau."}
             )
 
-        # Vérifier conflits avec autres rendez-vous
         overlapping = Appointment.objects.filter(
             practitioner=practitioner,
             appointment_date=appointment_date,
@@ -131,23 +140,7 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
             )
 
         return attrs
-
-
-class SoapNoteSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SoapNote
-        fields = (
-            "id",
-            "appointment",
-            "subjective",
-            "objective",
-            "assessment",
-            "plan",
-            "created_at",
-            "updated_at",
-        )
-        read_only_fields = ("id", "created_at", "updated_at")
-
+    
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:

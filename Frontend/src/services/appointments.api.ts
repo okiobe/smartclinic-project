@@ -6,6 +6,17 @@ export type AppointmentStatus =
   | "CANCELLED"
   | "COMPLETED";
 
+export type SoapNote = {
+  id: number;
+  appointment?: number;
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type Appointment = {
   id: number;
 
@@ -28,6 +39,8 @@ export type Appointment = {
   status: AppointmentStatus;
   reason: string;
   created_at?: string;
+
+  soap_note?: SoapNote | null;
 };
 
 export type CreateAppointmentPayload = {
@@ -55,6 +68,22 @@ export async function getAppointments(
 ): Promise<Appointment[]> {
   return apiRequest<Appointment[]>(endpoint, {
     method: "GET",
+  });
+}
+
+export async function getAppointmentDetail(
+  appointmentId: number,
+): Promise<Appointment> {
+  return apiRequest<Appointment>(`/appointments/${appointmentId}/`, {
+    method: "GET",
+  });
+}
+
+export async function cancelAppointment(
+  appointmentId: number,
+): Promise<Appointment> {
+  return apiRequest<Appointment>(`/appointments/${appointmentId}/cancel/`, {
+    method: "PATCH",
   });
 }
 

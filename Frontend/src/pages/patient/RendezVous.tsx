@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   getAppointments,
   getAppointmentDetail,
@@ -98,6 +98,7 @@ export default function RendezVous() {
   const [selectedAppointment, setSelectedAppointment] =
     useState<Appointment | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoadingId, setDetailLoadingId] = useState<number | null>(null);
   const [detailError, setDetailError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
 
@@ -163,8 +164,14 @@ export default function RendezVous() {
   }, []);
 
   async function handleShowDetails(appointmentId: number) {
+    if (selectedAppointment?.id === appointmentId) {
+      closeDetails();
+      return;
+    }
+
     try {
       setDetailLoading(true);
+      setDetailLoadingId(appointmentId);
       setDetailError("");
       setInfoMessage("");
 
@@ -179,12 +186,15 @@ export default function RendezVous() {
       setSelectedAppointment(null);
     } finally {
       setDetailLoading(false);
+      setDetailLoadingId(null);
     }
   }
 
   function closeDetails() {
     setSelectedAppointment(null);
     setDetailError("");
+    setDetailLoading(false);
+    setDetailLoadingId(null);
   }
 
   async function handleCancel(appointment: Appointment) {
@@ -637,57 +647,256 @@ export default function RendezVous() {
               ) : (
                 appointments.map((a) => {
                   const isActionLoading = actionLoadingId === a.id;
+                  const isDetailOpen = selectedAppointment?.id === a.id;
+                  const isDetailLoading = detailLoadingId === a.id;
 
                   return (
-                    <tr key={a.id} className="border-b border-black/5">
-                      <td className="py-3 pr-4">{a.appointment_date}</td>
-                      <td className="py-3 pr-4">
-                        {formatTime(a.start_time)} - {formatTime(a.end_time)}
-                      </td>
-                      <td className="py-3 pr-4">{a.service_name}</td>
-                      <td className="py-3 pr-4">
-                        Dr {a.practitioner_first_name}{" "}
-                        {a.practitioner_last_name}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span
-                          className={`inline-flex items-center rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(
-                            a.status,
-                          )}`}
-                        >
-                          {formatStatus(a.status)}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-2">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleShowDetails(a.id)}
-                            className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
+                    <React.Fragment key={a.id}>
+                      <tr className="border-b border-black/5">
+                        <td className="py-3 pr-4">{a.appointment_date}</td>
+                        <td className="py-3 pr-4">
+                          {formatTime(a.start_time)} - {formatTime(a.end_time)}
+                        </td>
+                        <td className="py-3 pr-4">{a.service_name}</td>
+                        <td className="py-3 pr-4">
+                          Dr {a.practitioner_first_name}{" "}
+                          {a.practitioner_last_name}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(
+                              a.status,
+                            )}`}
                           >
-                            Détails
-                          </button>
+                            {formatStatus(a.status)}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-2">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleShowDetails(a.id)}
+                              className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
+                            >
+                              {isDetailOpen ? "Fermer" : "Détails"}
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleOpenReschedule(a)}
-                            disabled={!canReschedule(a)}
-                            className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Reprogrammer
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReschedule(a)}
+                              disabled={!canReschedule(a)}
+                              className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Reprogrammer
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleCancel(a)}
-                            disabled={!canCancel(a.status) || isActionLoading}
-                            className="rounded-full bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isActionLoading ? "Annulation..." : "Annuler"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                            <button
+                              type="button"
+                              onClick={() => handleCancel(a)}
+                              disabled={!canCancel(a.status) || isActionLoading}
+                              className="rounded-full bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {isActionLoading ? "Annulation..." : "Annuler"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {(isDetailLoading ||
+                        (isDetailOpen &&
+                          (detailError || selectedAppointment))) && (
+                        <tr className="border-b border-black/10 bg-black/[0.02]">
+                          <td colSpan={6} className="p-4">
+                            <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+                              <div className="mb-4 flex items-start justify-between gap-4">
+                                <div>
+                                  <h2 className="text-lg font-semibold">
+                                    Détails du rendez-vous
+                                  </h2>
+                                  <p className="mt-1 text-sm text-black/60">
+                                    Informations complètes du rendez-vous et
+                                    note SOAP associée.
+                                  </p>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={closeDetails}
+                                  className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
+                                >
+                                  Fermer
+                                </button>
+                              </div>
+
+                              {isDetailLoading ? (
+                                <div className="rounded-xl border border-dashed border-black/10 bg-black/[0.02] p-4 text-sm text-black/60">
+                                  Chargement des détails...
+                                </div>
+                              ) : detailError ? (
+                                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+                                  {detailError}
+                                </div>
+                              ) : selectedAppointment ? (
+                                <div className="space-y-6">
+                                  <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4">
+                                      <h3 className="mb-3 text-sm font-semibold text-black/70">
+                                        Informations générales
+                                      </h3>
+                                      <div className="space-y-2 text-sm text-black/80">
+                                        <p>
+                                          <span className="font-medium">
+                                            Date :
+                                          </span>{" "}
+                                          {selectedAppointment.appointment_date}
+                                        </p>
+                                        <p>
+                                          <span className="font-medium">
+                                            Heure :
+                                          </span>{" "}
+                                          {formatTime(
+                                            selectedAppointment.start_time,
+                                          )}{" "}
+                                          -{" "}
+                                          {formatTime(
+                                            selectedAppointment.end_time,
+                                          )}
+                                        </p>
+                                        <p>
+                                          <span className="font-medium">
+                                            Service :
+                                          </span>{" "}
+                                          {selectedAppointment.service_name}
+                                        </p>
+                                        <p>
+                                          <span className="font-medium">
+                                            Praticien :
+                                          </span>{" "}
+                                          Dr{" "}
+                                          {
+                                            selectedAppointment.practitioner_first_name
+                                          }{" "}
+                                          {
+                                            selectedAppointment.practitioner_last_name
+                                          }
+                                        </p>
+                                        <p>
+                                          <span className="font-medium">
+                                            Statut :
+                                          </span>{" "}
+                                          {formatStatus(
+                                            selectedAppointment.status,
+                                          )}
+                                        </p>
+                                        <p>
+                                          <span className="font-medium">
+                                            Motif :
+                                          </span>{" "}
+                                          {selectedAppointment.reason?.trim() ||
+                                            "Non renseigné"}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4">
+                                      <h3 className="mb-3 text-sm font-semibold text-black/70">
+                                        Note SOAP
+                                      </h3>
+
+                                      {selectedAppointment.soap_note ? (
+                                        <div className="space-y-3 text-sm text-black/80">
+                                          <div>
+                                            <p className="font-medium">
+                                              Subjective
+                                            </p>
+                                            <p className="mt-1 whitespace-pre-wrap">
+                                              {selectedAppointment.soap_note
+                                                .subjective || "—"}
+                                            </p>
+                                          </div>
+
+                                          <div>
+                                            <p className="font-medium">
+                                              Objective
+                                            </p>
+                                            <p className="mt-1 whitespace-pre-wrap">
+                                              {selectedAppointment.soap_note
+                                                .objective || "—"}
+                                            </p>
+                                          </div>
+
+                                          <div>
+                                            <p className="font-medium">
+                                              Assessment
+                                            </p>
+                                            <p className="mt-1 whitespace-pre-wrap">
+                                              {selectedAppointment.soap_note
+                                                .assessment || "—"}
+                                            </p>
+                                          </div>
+
+                                          <div>
+                                            <p className="font-medium">Plan</p>
+                                            <p className="mt-1 whitespace-pre-wrap">
+                                              {selectedAppointment.soap_note
+                                                .plan || "—"}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="text-sm text-black/60">
+                                          Aucune note SOAP n’est disponible pour
+                                          ce rendez-vous.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {(selectedAppointment.status === "PENDING" ||
+                                    selectedAppointment.status ===
+                                      "CONFIRMED") && (
+                                    <div className="flex flex-wrap justify-end gap-3">
+                                      {!isPastAppointmentDate(
+                                        selectedAppointment.appointment_date,
+                                      ) && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleOpenReschedule(
+                                              selectedAppointment,
+                                            )
+                                          }
+                                          className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
+                                        >
+                                          Reprogrammer
+                                        </button>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleCancel(selectedAppointment)
+                                        }
+                                        disabled={
+                                          actionLoadingId ===
+                                          selectedAppointment.id
+                                        }
+                                        className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {actionLoadingId ===
+                                        selectedAppointment.id
+                                          ? "Annulation..."
+                                          : "Annuler ce rendez-vous"}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -695,145 +904,6 @@ export default function RendezVous() {
           </table>
         </div>
       </div>
-
-      {(detailLoading || detailError || selectedAppointment) && (
-        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">Détails du rendez-vous</h2>
-              <p className="mt-1 text-sm text-black/60">
-                Informations complètes du rendez-vous et note SOAP associée.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={closeDetails}
-              className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
-            >
-              Fermer
-            </button>
-          </div>
-
-          {detailLoading ? (
-            <div className="rounded-xl border border-dashed border-black/10 bg-black/[0.02] p-4 text-sm text-black/60">
-              Chargement des détails...
-            </div>
-          ) : detailError ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-              {detailError}
-            </div>
-          ) : selectedAppointment ? (
-            <div className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-black/70">
-                    Informations générales
-                  </h3>
-                  <div className="space-y-2 text-sm text-black/80">
-                    <p>
-                      <span className="font-medium">Date :</span>{" "}
-                      {selectedAppointment.appointment_date}
-                    </p>
-                    <p>
-                      <span className="font-medium">Heure :</span>{" "}
-                      {formatTime(selectedAppointment.start_time)} -{" "}
-                      {formatTime(selectedAppointment.end_time)}
-                    </p>
-                    <p>
-                      <span className="font-medium">Service :</span>{" "}
-                      {selectedAppointment.service_name}
-                    </p>
-                    <p>
-                      <span className="font-medium">Praticien :</span> Dr{" "}
-                      {selectedAppointment.practitioner_first_name}{" "}
-                      {selectedAppointment.practitioner_last_name}
-                    </p>
-                    <p>
-                      <span className="font-medium">Statut :</span>{" "}
-                      {formatStatus(selectedAppointment.status)}
-                    </p>
-                    <p>
-                      <span className="font-medium">Motif :</span>{" "}
-                      {selectedAppointment.reason?.trim() || "Non renseigné"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-black/70">
-                    Note SOAP
-                  </h3>
-
-                  {selectedAppointment.soap_note ? (
-                    <div className="space-y-3 text-sm text-black/80">
-                      <div>
-                        <p className="font-medium">Subjective</p>
-                        <p className="mt-1 whitespace-pre-wrap">
-                          {selectedAppointment.soap_note.subjective || "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">Objective</p>
-                        <p className="mt-1 whitespace-pre-wrap">
-                          {selectedAppointment.soap_note.objective || "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">Assessment</p>
-                        <p className="mt-1 whitespace-pre-wrap">
-                          {selectedAppointment.soap_note.assessment || "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">Plan</p>
-                        <p className="mt-1 whitespace-pre-wrap">
-                          {selectedAppointment.soap_note.plan || "—"}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-black/60">
-                      Aucune note SOAP n’est disponible pour ce rendez-vous.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {(selectedAppointment.status === "PENDING" ||
-                selectedAppointment.status === "CONFIRMED") && (
-                <div className="flex flex-wrap justify-end gap-3">
-                  {!isPastAppointmentDate(
-                    selectedAppointment.appointment_date,
-                  ) && (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenReschedule(selectedAppointment)}
-                      className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-medium hover:bg-black/5"
-                    >
-                      Reprogrammer
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleCancel(selectedAppointment)}
-                    disabled={actionLoadingId === selectedAppointment.id}
-                    className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {actionLoadingId === selectedAppointment.id
-                      ? "Annulation..."
-                      : "Annuler ce rendez-vous"}
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
     </div>
   );
 }

@@ -145,3 +145,16 @@ export async function updateAppointmentSoapNote(
     body: payload,
   });
 }
+
+export async function generateSoapWithAI(
+  appointmentId: number,
+  notes: string,
+): Promise<SoapNotePayload> {
+  return apiRequest<SoapNotePayload>(
+    `/appointments/${appointmentId}/soap-note/ai-draft/`,
+    {
+      method: "POST",
+      body: { notes },
+    },
+  );
+}

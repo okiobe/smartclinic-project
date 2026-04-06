@@ -6,6 +6,7 @@ import {
   completeAppointment,
   createAppointmentSoapNote,
   updateAppointmentSoapNote,
+  generateSoapWithAI,
   type Appointment,
   type SoapNotePayload,
 } from "../../services/appointments.api";
@@ -67,6 +68,10 @@ export default function RendezVousJour() {
   const [soapForms, setSoapForms] = useState<Record<number, SoapFormState>>({});
   const [soapLoadingId, setSoapLoadingId] = useState<number | null>(null);
   const [soapMessage, setSoapMessage] = useState("");
+
+  const [quickNotes, setQuickNotes] = useState<Record<number, string>>({});
+  const [aiLoadingId, setAiLoadingId] = useState<number | null>(null);
+  const [aiMessage, setAiMessage] = useState("");
 
   const getBadgeClass = (statut: StatutRendezVous) => {
     switch (statut) {
@@ -132,6 +137,7 @@ export default function RendezVousJour() {
       setActionLoadingId(appointmentId);
       setError("");
       setSoapMessage("");
+      setAiMessage("");
       await confirmAppointment(appointmentId);
       await loadRendezVousJour();
     } catch (err) {
@@ -150,6 +156,7 @@ export default function RendezVousJour() {
       setActionLoadingId(appointmentId);
       setError("");
       setSoapMessage("");
+      setAiMessage("");
       await cancelAppointment(appointmentId);
       await loadRendezVousJour();
     } catch (err) {
@@ -168,6 +175,7 @@ export default function RendezVousJour() {
       setActionLoadingId(appointmentId);
       setError("");
       setSoapMessage("");
+      setAiMessage("");
       await completeAppointment(appointmentId);
       await loadRendezVousJour();
     } catch (err) {
@@ -184,6 +192,7 @@ export default function RendezVousJour() {
   function toggleSoapEditor(appointment: Appointment) {
     setError("");
     setSoapMessage("");
+    setAiMessage("");
 
     setSoapForms((prev) => ({
       ...prev,
@@ -215,6 +224,57 @@ export default function RendezVousJour() {
 
     setError("");
     setSoapMessage("");
+    setAiMessage("");
+  }
+
+  function handleQuickNotesChange(appointmentId: number, value: string) {
+    setQuickNotes((prev) => ({
+      ...prev,
+      [appointmentId]: value,
+    }));
+
+    setError("");
+    setAiMessage("");
+  }
+
+  async function handleGenerateAI(appointmentId: number) {
+    const notes = (quickNotes[appointmentId] ?? "").trim();
+
+    if (!notes) {
+      setError("Veuillez saisir des notes rapides avant de lancer l’IA.");
+      return;
+    }
+
+    try {
+      setAiLoadingId(appointmentId);
+      setError("");
+      setAiMessage("");
+      setSoapMessage("");
+
+      const aiDraft = await generateSoapWithAI(appointmentId, notes);
+
+      setSoapForms((prev) => ({
+        ...prev,
+        [appointmentId]: {
+          subjective: aiDraft.subjective ?? "",
+          objective: aiDraft.objective ?? "",
+          assessment: aiDraft.assessment ?? "",
+          plan: aiDraft.plan ?? "",
+        },
+      }));
+
+      setAiMessage(
+        "La proposition IA a été générée. Vérifiez et modifiez le contenu avant de sauvegarder.",
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de générer la note SOAP avec l’IA.",
+      );
+    } finally {
+      setAiLoadingId(null);
+    }
   }
 
   async function handleSoapSubmit(appointment: Appointment) {
@@ -231,6 +291,7 @@ export default function RendezVousJour() {
       setSoapLoadingId(appointment.id);
       setError("");
       setSoapMessage("");
+      setAiMessage("");
 
       if (appointment.soap_note) {
         await updateAppointmentSoapNote(appointment.id, payload);
@@ -329,6 +390,12 @@ export default function RendezVousJour() {
         </div>
       )}
 
+      {aiMessage && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-700">
+          {aiMessage}
+        </div>
+      )}
+
       {soapMessage && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
           {soapMessage}
@@ -347,6 +414,7 @@ export default function RendezVousJour() {
             const soapForm =
               soapForms[appointment.id] ?? getInitialSoapForm(appointment);
             const isSoapSaving = soapLoadingId === appointment.id;
+            const isAiLoading = aiLoadingId === appointment.id;
 
             return (
               <div
@@ -442,6 +510,37 @@ export default function RendezVousJour() {
                           ).toLocaleString("fr-CA")}
                         </div>
                       )}
+                    </div>
+
+                    <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
+                      <label className="mb-2 block text-sm font-medium text-violet-900">
+                        Notes rapides (IA)
+                      </label>
+                      <textarea
+                        value={quickNotes[appointment.id] ?? ""}
+                        onChange={(e) =>
+                          handleQuickNotesChange(appointment.id, e.target.value)
+                        }
+                        rows={3}
+                        className="w-full rounded-xl border border-violet-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-400"
+                        placeholder="Ex: Douleur genou 7/10, amplitude limitée, chaleur appliquée..."
+                      />
+
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAI(appointment.id)}
+                          disabled={isAiLoading}
+                          className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {isAiLoading ? "Génération..." : "✨ Générer avec IA"}
+                        </button>
+
+                        <p className="text-xs text-violet-700">
+                          L’IA propose un brouillon. Vérifiez et modifiez avant
+                          d’enregistrer.
+                        </p>
+                      </div>
                     </div>
 
                     <div className="grid gap-4">

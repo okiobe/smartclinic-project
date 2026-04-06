@@ -1,6 +1,7 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from .ai_service import generate_soap_from_notes
 
 from .models import Appointment, SoapNote
 from .serializers import (
@@ -213,3 +214,40 @@ class AppointmentSoapNoteView(AppointmentAccessMixin, APIView):
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class AppointmentSoapNoteAIDraftView(AppointmentAccessMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        appointment = self.get_scoped_queryset().filter(pk=pk).first()
+
+        if not appointment:
+            return Response(
+                {"detail": "Rendez-vous introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if getattr(request.user, "role", None) != "PRACTITIONER":
+            return Response(
+                {"detail": "Seul le praticien peut utiliser l'IA."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        notes = (request.data.get("notes") or "").strip()
+
+        if not notes:
+            return Response(
+                {"detail": "Veuillez fournir des notes."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            soap = generate_soap_from_notes(notes)
+
+            return Response(soap, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"detail": f"Erreur IA: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

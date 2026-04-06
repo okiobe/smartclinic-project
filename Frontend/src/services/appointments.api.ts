@@ -158,3 +158,19 @@ export async function generateSoapWithAI(
     },
   );
 }
+
+export async function transcribeAppointmentAudio(
+  appointmentId: number,
+  audioFile: File,
+): Promise<{ transcript: string }> {
+  const formData = new FormData();
+  formData.append("audio", audioFile);
+
+  return apiRequest<{ transcript: string }>(
+    `/appointments/${appointmentId}/soap-note/transcribe/`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+}

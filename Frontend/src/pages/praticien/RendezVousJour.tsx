@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getAppointments,
   confirmAppointment,
@@ -7,6 +7,7 @@ import {
   createAppointmentSoapNote,
   updateAppointmentSoapNote,
   generateSoapWithAI,
+  transcribeAppointmentAudio,
   type Appointment,
   type SoapNotePayload,
 } from "../../services/appointments.api";
@@ -56,6 +57,33 @@ function getInitialSoapForm(appointment: Appointment): SoapFormState {
   };
 }
 
+function getBestMimeType() {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      typeof MediaRecorder !== "undefined" &&
+      MediaRecorder.isTypeSupported(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function getFileExtensionFromMimeType(mimeType: string) {
+  if (mimeType.includes("mp4")) return "m4a";
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("wav")) return "wav";
+  return "webm";
+}
+
 export default function RendezVousJour() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +99,16 @@ export default function RendezVousJour() {
 
   const [quickNotes, setQuickNotes] = useState<Record<number, string>>({});
   const [aiLoadingId, setAiLoadingId] = useState<number | null>(null);
+  const [audioLoadingId, setAudioLoadingId] = useState<number | null>(null);
+  const [recordingAppointmentId, setRecordingAppointmentId] = useState<
+    number | null
+  >(null);
   const [aiMessage, setAiMessage] = useState("");
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingAppointmentIdRef = useRef<number | null>(null);
 
   const getBadgeClass = (statut: StatutRendezVous) => {
     switch (statut) {
@@ -124,6 +161,13 @@ export default function RendezVousJour() {
 
   useEffect(() => {
     loadRendezVousJour();
+
+    return () => {
+      if (mediaRecorderRef.current?.state !== "inactive") {
+        mediaRecorderRef.current?.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
   }, []);
 
   const rendezVous = useMemo(() => {
@@ -237,11 +281,161 @@ export default function RendezVousJour() {
     setAiMessage("");
   }
 
+  async function handleAudioTranscription(
+    appointmentId: number,
+    file: File | null,
+  ) {
+    if (!file) {
+      return;
+    }
+
+    try {
+      setAudioLoadingId(appointmentId);
+      setError("");
+      setAiMessage("");
+      setSoapMessage("");
+
+      const data = await transcribeAppointmentAudio(appointmentId, file);
+
+      setQuickNotes((prev) => ({
+        ...prev,
+        [appointmentId]: data.transcript ?? "",
+      }));
+
+      setAiMessage(
+        "La dictée a été transcrite avec succès. Vous pouvez maintenant générer la note SOAP avec l’IA.",
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de transcrire le mémo vocal.",
+      );
+    } finally {
+      setAudioLoadingId(null);
+    }
+  }
+
+  async function handleStartRecording(appointmentId: number) {
+    try {
+      setError("");
+      setAiMessage("");
+      setSoapMessage("");
+
+      if (
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== "function"
+      ) {
+        setError(
+          "Votre navigateur ne prend pas en charge l’enregistrement audio.",
+        );
+        return;
+      }
+
+      if (recordingAppointmentId !== null) {
+        setError("Un enregistrement est déjà en cours.");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getBestMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      recordingChunksRef.current = [];
+      mediaRecorderRef.current = recorder;
+      mediaStreamRef.current = stream;
+      recordingAppointmentIdRef.current = appointmentId;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const currentAppointmentId = recordingAppointmentIdRef.current;
+
+        try {
+          if (currentAppointmentId === null) {
+            return;
+          }
+
+          setAudioLoadingId(currentAppointmentId);
+
+          const finalMimeType = recorder.mimeType || "audio/webm";
+          const extension = getFileExtensionFromMimeType(finalMimeType);
+          const audioBlob = new Blob(recordingChunksRef.current, {
+            type: finalMimeType,
+          });
+
+          const audioFile = new File(
+            [audioBlob],
+            `memo-vocal-${currentAppointmentId}.${extension}`,
+            {
+              type: finalMimeType,
+            },
+          );
+
+          const data = await transcribeAppointmentAudio(
+            currentAppointmentId,
+            audioFile,
+          );
+
+          setQuickNotes((prev) => ({
+            ...prev,
+            [currentAppointmentId]: data.transcript ?? "",
+          }));
+
+          setAiMessage(
+            "La dictée a été transcrite avec succès. Vous pouvez maintenant générer la note SOAP avec l’IA.",
+          );
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Impossible de transcrire l’enregistrement audio.",
+          );
+        } finally {
+          setAudioLoadingId(null);
+          setRecordingAppointmentId(null);
+          recordingAppointmentIdRef.current = null;
+          recordingChunksRef.current = [];
+          mediaRecorderRef.current = null;
+          mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+      };
+
+      recorder.start();
+      setRecordingAppointmentId(appointmentId);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d’accéder au microphone.",
+      );
+    }
+  }
+
+  function handleStopRecording() {
+    const recorder = mediaRecorderRef.current;
+
+    if (!recorder) {
+      return;
+    }
+
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+  }
+
   async function handleGenerateAI(appointmentId: number) {
     const notes = (quickNotes[appointmentId] ?? "").trim();
 
     if (!notes) {
-      setError("Veuillez saisir des notes rapides avant de lancer l’IA.");
+      setError("Veuillez saisir ou transcrire des notes avant de lancer l’IA.");
       return;
     }
 
@@ -415,6 +609,11 @@ export default function RendezVousJour() {
               soapForms[appointment.id] ?? getInitialSoapForm(appointment);
             const isSoapSaving = soapLoadingId === appointment.id;
             const isAiLoading = aiLoadingId === appointment.id;
+            const isAudioLoading = audioLoadingId === appointment.id;
+            const isRecording = recordingAppointmentId === appointment.id;
+            const anotherRecordingInProgress =
+              recordingAppointmentId !== null &&
+              recordingAppointmentId !== appointment.id;
 
             return (
               <div
@@ -527,6 +726,46 @@ export default function RendezVousJour() {
                       />
 
                       <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <label className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                          {isAudioLoading
+                            ? "Transcription..."
+                            : "🎵 Importer un audio"}
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleAudioTranscription(
+                                appointment.id,
+                                e.target.files?.[0] ?? null,
+                              )
+                            }
+                            disabled={isAudioLoading || isRecording}
+                          />
+                        </label>
+
+                        {isRecording ? (
+                          <button
+                            type="button"
+                            onClick={handleStopRecording}
+                            disabled={isAudioLoading}
+                            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            ⏹️ Arrêter l’enregistrement
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleStartRecording(appointment.id)}
+                            disabled={
+                              isAudioLoading || anotherRecordingInProgress
+                            }
+                            className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            🎤 Démarrer l’enregistrement
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => handleGenerateAI(appointment.id)}
@@ -537,8 +776,8 @@ export default function RendezVousJour() {
                         </button>
 
                         <p className="text-xs text-violet-700">
-                          L’IA propose un brouillon. Vérifiez et modifiez avant
-                          d’enregistrer.
+                          Importez un audio, enregistrez votre voix ou saisissez
+                          des notes, puis générez la note SOAP.
                         </p>
                       </div>
                     </div>

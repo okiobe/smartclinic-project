@@ -2,6 +2,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .ai_service import generate_soap_from_notes
+from .audio_service import transcribe_audio_file
 
 from .models import Appointment, SoapNote
 from .serializers import (
@@ -249,5 +250,51 @@ class AppointmentSoapNoteAIDraftView(AppointmentAccessMixin, APIView):
         except Exception as e:
             return Response(
                 {"detail": f"Erreur IA: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+class AppointmentSoapNoteTranscriptionView(AppointmentAccessMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        appointment = self.get_scoped_queryset().filter(pk=pk).first()
+
+        if not appointment:
+            return Response(
+                {"detail": "Rendez-vous introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if getattr(request.user, "role", None) != "PRACTITIONER":
+            return Response(
+                {"detail": "Seul le praticien peut transcrire un mémo vocal."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        audio_file = request.FILES.get("audio")
+
+        if not audio_file:
+            return Response(
+                {"detail": "Veuillez fournir un fichier audio."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            transcript = transcribe_audio_file(audio_file)
+
+            if not transcript:
+                return Response(
+                    {"detail": "La transcription audio est vide."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            return Response(
+                {"transcript": transcript},
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            return Response(
+                {"detail": f"Erreur transcription: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

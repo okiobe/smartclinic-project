@@ -1,11 +1,12 @@
 from django.urls import path
-from .views import AppointmentSoapNoteAIDraftView
 from .views import (
     AppointmentListCreateView,
     AppointmentDetailView,
     AppointmentStatusUpdateView,
     AppointmentCancelView,
     AppointmentSoapNoteView,
+    AppointmentSoapNoteAIDraftView,
+    AppointmentSoapNoteTranscriptionView,
 )
 
 urlpatterns = [
@@ -27,8 +28,13 @@ urlpatterns = [
         name="appointment-soap-note",
     ),
     path(
-    "<int:pk>/soap-note/ai-draft/",
-    AppointmentSoapNoteAIDraftView.as_view(),
-    name="appointment-soap-note-ai-draft",
-),
+        "<int:pk>/soap-note/ai-draft/",
+        AppointmentSoapNoteAIDraftView.as_view(),
+        name="appointment-soap-note-ai-draft",
+    ),
+    path(
+        "<int:pk>/soap-note/transcribe/",
+        AppointmentSoapNoteTranscriptionView.as_view(),
+        name="appointment-soap-note-transcribe",
+    ),
 ]

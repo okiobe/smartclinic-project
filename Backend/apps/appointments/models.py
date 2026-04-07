@@ -39,6 +39,10 @@ class Appointment(models.Model):
     reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Suivi du rappel par email avant 24h
+    email_reminder_sent = models.BooleanField(default=False)
+    email_reminder_sent_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["appointment_date", "start_time"]
 

@@ -1,9 +1,10 @@
-from rest_framework import permissions, status
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.permissions import IsAdminUserRole
 from .models import Patient
-from .serializers import PatientSerializer
+from .serializers import PatientSerializer, AdminPatientSerializer
 
 
 class MePatientView(APIView):
@@ -41,3 +42,30 @@ class MePatientView(APIView):
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class AdminPatientListView(generics.ListAPIView):
+    serializer_class = AdminPatientSerializer
+    permission_classes = [IsAdminUserRole]
+
+    def get_queryset(self):
+        return Patient.objects.select_related("user").order_by(
+            "user__first_name",
+            "user__last_name",
+        )
+
+
+class AdminPatientDetailView(generics.RetrieveDestroyAPIView):
+    serializer_class = AdminPatientSerializer
+    permission_classes = [IsAdminUserRole]
+
+    def get_queryset(self):
+        return Patient.objects.select_related("user").order_by(
+            "user__first_name",
+            "user__last_name",
+        )
+
+    def perform_destroy(self, instance):
+        user = instance.user
+        instance.delete()
+        user.delete()

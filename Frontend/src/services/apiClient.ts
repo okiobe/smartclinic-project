@@ -11,8 +11,12 @@ type ApiRequestOptions = {
 function getCookie(name: string): string | null {
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
+  if (parts.length === 2) return parts.pop()?.split(";").shift() || null;
   return null;
+}
+
+function isFormData(value: unknown): value is FormData {
+  return typeof FormData !== "undefined" && value instanceof FormData;
 }
 
 async function apiRequest<T>(
@@ -22,9 +26,14 @@ async function apiRequest<T>(
   const { method = "GET", body, headers = {} } = options;
 
   const requestHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
     ...headers,
   };
+
+  const bodyIsFormData = isFormData(body);
+
+  if (!bodyIsFormData) {
+    requestHeaders["Content-Type"] = "application/json";
+  }
 
   if (method !== "GET") {
     const csrfToken = getCookie("csrftoken");
@@ -37,7 +46,12 @@ async function apiRequest<T>(
     method,
     credentials: "include",
     headers: requestHeaders,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body:
+      body === undefined
+        ? undefined
+        : bodyIsFormData
+          ? body
+          : JSON.stringify(body),
   });
 
   let data: unknown = null;

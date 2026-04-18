@@ -26,6 +26,7 @@ export default function Sidebar() {
           ]
         : [
             { to: "/admin/dashboard", label: "Tableau de bord" },
+            { to: "/admin/staff-planning", label: "Planning du personnel" },
             { to: "/admin/services", label: "Services" },
             { to: "/admin/practitioners", label: "Praticiens" },
             { to: "/admin/patients", label: "Patients" },

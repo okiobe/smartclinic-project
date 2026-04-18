@@ -21,8 +21,10 @@ import PractitionerAvailability from "../pages/praticien/Disponibilites";
 import AdminDashboard from "../pages/admin/TableauDeBord";
 import AdminServices from "../pages/admin/Services";
 import AdminPractitioners from "../pages/admin/Praticiens";
+import AdminPractitionerAvailabilities from "../pages/admin/PraticienDisponibilites";
 import AdminPatients from "../pages/admin/Patients";
 import AdminSettings from "../pages/admin/Parametres";
+import PlanningPersonnel from "../pages/admin/PlanningPersonnel";
 
 import Forbidden403 from "../pages/system/Forbidden403";
 import NotFound404 from "../pages/system/NotFound404";
@@ -155,10 +157,26 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "/admin/practitioners/:id/availabilities",
+        element: (
+          <ProtectedRoute roles={["ADMIN"]}>
+            <AdminPractitionerAvailabilities />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: "/admin/patients",
         element: (
           <ProtectedRoute roles={["ADMIN"]}>
             <AdminPatients />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/admin/staff-planning",
+        element: (
+          <ProtectedRoute roles={["ADMIN"]}>
+            <PlanningPersonnel />
           </ProtectedRoute>
         ),
       },

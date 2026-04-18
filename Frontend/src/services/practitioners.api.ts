@@ -53,6 +53,20 @@ export type UpdatePractitionerPayload = {
   service_ids?: number[];
 };
 
+export type CreateAvailabilityPayload = {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  is_active?: boolean;
+};
+
+export type UpdateAvailabilityPayload = {
+  weekday?: number;
+  start_time?: string;
+  end_time?: string;
+  is_active?: boolean;
+};
+
 export async function getAdminPractitioners(): Promise<Practitioner[]> {
   return apiRequest<Practitioner[]>("/practitioners/admin/", {
     method: "GET",
@@ -111,4 +125,87 @@ export async function getPractitionerAvailability(
       method: "GET",
     },
   );
+}
+
+export async function getAdminPractitionerAvailabilities(
+  practitionerId: number,
+): Promise<AvailabilityRule[]> {
+  return apiRequest<AvailabilityRule[]>(
+    `/admin/practitioners/${practitionerId}/availabilities/`,
+    {
+      method: "GET",
+    },
+  );
+}
+
+export async function createAdminPractitionerAvailability(
+  practitionerId: number,
+  payload: CreateAvailabilityPayload,
+): Promise<AvailabilityRule> {
+  return apiRequest<AvailabilityRule>(
+    `/admin/practitioners/${practitionerId}/availabilities/`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+export async function updateAdminAvailability(
+  availabilityId: number,
+  payload: UpdateAvailabilityPayload,
+): Promise<AvailabilityRule> {
+  return apiRequest<AvailabilityRule>(
+    `/admin/availabilities/${availabilityId}/`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function deleteAdminAvailability(
+  availabilityId: number,
+): Promise<void> {
+  await apiRequest(`/admin/availabilities/${availabilityId}/`, {
+    method: "DELETE",
+  });
+}
+
+export async function getMyPractitionerAvailabilities(): Promise<
+  AvailabilityRule[]
+> {
+  return apiRequest<AvailabilityRule[]>("/practitioner/me/availabilities/", {
+    method: "GET",
+  });
+}
+
+export async function createMyPractitionerAvailability(
+  payload: CreateAvailabilityPayload,
+): Promise<AvailabilityRule> {
+  return apiRequest<AvailabilityRule>("/practitioner/me/availabilities/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateMyPractitionerAvailability(
+  availabilityId: number,
+  payload: UpdateAvailabilityPayload,
+): Promise<AvailabilityRule> {
+  return apiRequest<AvailabilityRule>(
+    `/practitioner/me/availabilities/${availabilityId}/`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function deleteMyPractitionerAvailability(
+  availabilityId: number,
+): Promise<void> {
+  await apiRequest(`/practitioner/me/availabilities/${availabilityId}/`, {
+    method: "DELETE",
+  });
 }

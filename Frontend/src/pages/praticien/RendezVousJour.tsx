@@ -1,18 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getAppointments,
+  confirmAppointment,
+  cancelAppointment,
+  completeAppointment,
+  createAppointmentSoapNote,
+  updateAppointmentSoapNote,
+  generateSoapWithAI,
+  transcribeAppointmentAudio,
   type Appointment,
+  type SoapNotePayload,
 } from "../../services/appointments.api";
 
 type StatutRendezVous = "Confirmé" | "En attente" | "Annulé" | "Terminé";
 
-type RendezVous = {
-  id: number;
-  heureDebut: string;
-  heureFin: string;
-  patient: string;
-  motif: string;
-  statut: StatutRendezVous;
+type SoapFormState = {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
 };
 
 function formatStatus(status: string): StatutRendezVous {
@@ -42,10 +48,67 @@ function getTodayDate() {
   return `${year}-${month}-${day}`;
 }
 
+function getInitialSoapForm(appointment: Appointment): SoapFormState {
+  return {
+    subjective: appointment.soap_note?.subjective ?? "",
+    objective: appointment.soap_note?.objective ?? "",
+    assessment: appointment.soap_note?.assessment ?? "",
+    plan: appointment.soap_note?.plan ?? "",
+  };
+}
+
+function getBestMimeType() {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      typeof MediaRecorder !== "undefined" &&
+      MediaRecorder.isTypeSupported(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function getFileExtensionFromMimeType(mimeType: string) {
+  if (mimeType.includes("mp4")) return "m4a";
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("wav")) return "wav";
+  return "webm";
+}
+
 export default function RendezVousJour() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+
+  const [openSoapAppointmentId, setOpenSoapAppointmentId] = useState<
+    number | null
+  >(null);
+  const [soapForms, setSoapForms] = useState<Record<number, SoapFormState>>({});
+  const [soapLoadingId, setSoapLoadingId] = useState<number | null>(null);
+  const [soapMessage, setSoapMessage] = useState("");
+
+  const [quickNotes, setQuickNotes] = useState<Record<number, string>>({});
+  const [aiLoadingId, setAiLoadingId] = useState<number | null>(null);
+  const [audioLoadingId, setAudioLoadingId] = useState<number | null>(null);
+  const [recordingAppointmentId, setRecordingAppointmentId] = useState<
+    number | null
+  >(null);
+  const [aiMessage, setAiMessage] = useState("");
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingAppointmentIdRef = useRef<number | null>(null);
 
   const getBadgeClass = (statut: StatutRendezVous) => {
     switch (statut) {
@@ -70,6 +133,20 @@ export default function RendezVousJour() {
       const today = getTodayDate();
       const data = await getAppointments(`/appointments/?date=${today}`);
       setAppointments(data);
+
+      setSoapForms((prev) => {
+        const next = { ...prev };
+
+        for (const appointment of data) {
+          if (!next[appointment.id]) {
+            next[appointment.id] = getInitialSoapForm(appointment);
+          } else if (appointment.soap_note) {
+            next[appointment.id] = getInitialSoapForm(appointment);
+          }
+        }
+
+        return next;
+      });
     } catch (err) {
       const message =
         err instanceof Error
@@ -84,44 +161,408 @@ export default function RendezVousJour() {
 
   useEffect(() => {
     loadRendezVousJour();
+
+    return () => {
+      if (mediaRecorderRef.current?.state !== "inactive") {
+        mediaRecorderRef.current?.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
   }, []);
 
   const rendezVous = useMemo(() => {
     return appointments
       .filter((appointment) => appointment.appointment_date === getTodayDate())
-      .sort((a, b) => a.start_time.localeCompare(b.start_time))
-      .map(
-        (appointment): RendezVous => ({
-          id: appointment.id,
-          heureDebut: formatTime(appointment.start_time),
-          heureFin: formatTime(appointment.end_time),
-          patient: `${appointment.patient_first_name} ${appointment.patient_last_name}`,
-          motif: appointment.reason?.trim() || appointment.service_name,
-          statut: formatStatus(appointment.status),
-        }),
-      );
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
   }, [appointments]);
+
+  async function handleConfirm(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      setSoapMessage("");
+      setAiMessage("");
+      await confirmAppointment(appointmentId);
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de confirmer ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleCancel(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      setSoapMessage("");
+      setAiMessage("");
+      await cancelAppointment(appointmentId);
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d’annuler ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleComplete(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      setSoapMessage("");
+      setAiMessage("");
+      await completeAppointment(appointmentId);
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de terminer ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  function toggleSoapEditor(appointment: Appointment) {
+    setError("");
+    setSoapMessage("");
+    setAiMessage("");
+
+    setSoapForms((prev) => ({
+      ...prev,
+      [appointment.id]: getInitialSoapForm(appointment),
+    }));
+
+    setOpenSoapAppointmentId((current) =>
+      current === appointment.id ? null : appointment.id,
+    );
+  }
+
+  function handleSoapChange(
+    appointmentId: number,
+    field: keyof SoapFormState,
+    value: string,
+  ) {
+    setSoapForms((prev) => ({
+      ...prev,
+      [appointmentId]: {
+        ...(prev[appointmentId] ?? {
+          subjective: "",
+          objective: "",
+          assessment: "",
+          plan: "",
+        }),
+        [field]: value,
+      },
+    }));
+
+    setError("");
+    setSoapMessage("");
+    setAiMessage("");
+  }
+
+  function handleQuickNotesChange(appointmentId: number, value: string) {
+    setQuickNotes((prev) => ({
+      ...prev,
+      [appointmentId]: value,
+    }));
+
+    setError("");
+    setAiMessage("");
+  }
+
+  async function handleAudioTranscription(
+    appointmentId: number,
+    file: File | null,
+  ) {
+    if (!file) {
+      return;
+    }
+
+    try {
+      setAudioLoadingId(appointmentId);
+      setError("");
+      setAiMessage("");
+      setSoapMessage("");
+
+      const data = await transcribeAppointmentAudio(appointmentId, file);
+
+      setQuickNotes((prev) => ({
+        ...prev,
+        [appointmentId]: data.transcript ?? "",
+      }));
+
+      setAiMessage(
+        "La dictée a été transcrite avec succès. Vous pouvez maintenant générer la note SOAP avec l’IA.",
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de transcrire le mémo vocal.",
+      );
+    } finally {
+      setAudioLoadingId(null);
+    }
+  }
+
+  async function handleStartRecording(appointmentId: number) {
+    try {
+      setError("");
+      setAiMessage("");
+      setSoapMessage("");
+
+      if (
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== "function"
+      ) {
+        setError(
+          "Votre navigateur ne prend pas en charge l’enregistrement audio.",
+        );
+        return;
+      }
+
+      if (recordingAppointmentId !== null) {
+        setError("Un enregistrement est déjà en cours.");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getBestMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      recordingChunksRef.current = [];
+      mediaRecorderRef.current = recorder;
+      mediaStreamRef.current = stream;
+      recordingAppointmentIdRef.current = appointmentId;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const currentAppointmentId = recordingAppointmentIdRef.current;
+
+        try {
+          if (currentAppointmentId === null) {
+            return;
+          }
+
+          setAudioLoadingId(currentAppointmentId);
+
+          const finalMimeType = recorder.mimeType || "audio/webm";
+          const extension = getFileExtensionFromMimeType(finalMimeType);
+          const audioBlob = new Blob(recordingChunksRef.current, {
+            type: finalMimeType,
+          });
+
+          const audioFile = new File(
+            [audioBlob],
+            `memo-vocal-${currentAppointmentId}.${extension}`,
+            {
+              type: finalMimeType,
+            },
+          );
+
+          const data = await transcribeAppointmentAudio(
+            currentAppointmentId,
+            audioFile,
+          );
+
+          setQuickNotes((prev) => ({
+            ...prev,
+            [currentAppointmentId]: data.transcript ?? "",
+          }));
+
+          setAiMessage(
+            "La dictée a été transcrite avec succès. Vous pouvez maintenant générer la note SOAP avec l’IA.",
+          );
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Impossible de transcrire l’enregistrement audio.",
+          );
+        } finally {
+          setAudioLoadingId(null);
+          setRecordingAppointmentId(null);
+          recordingAppointmentIdRef.current = null;
+          recordingChunksRef.current = [];
+          mediaRecorderRef.current = null;
+          mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+      };
+
+      recorder.start();
+      setRecordingAppointmentId(appointmentId);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d’accéder au microphone.",
+      );
+    }
+  }
+
+  function handleStopRecording() {
+    const recorder = mediaRecorderRef.current;
+
+    if (!recorder) {
+      return;
+    }
+
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+  }
+
+  async function handleGenerateAI(appointmentId: number) {
+    const notes = (quickNotes[appointmentId] ?? "").trim();
+
+    if (!notes) {
+      setError("Veuillez saisir ou transcrire des notes avant de lancer l’IA.");
+      return;
+    }
+
+    try {
+      setAiLoadingId(appointmentId);
+      setError("");
+      setAiMessage("");
+      setSoapMessage("");
+
+      const aiDraft = await generateSoapWithAI(appointmentId, notes);
+
+      setSoapForms((prev) => ({
+        ...prev,
+        [appointmentId]: {
+          subjective: aiDraft.subjective ?? "",
+          objective: aiDraft.objective ?? "",
+          assessment: aiDraft.assessment ?? "",
+          plan: aiDraft.plan ?? "",
+        },
+      }));
+
+      setAiMessage(
+        "La proposition IA a été générée. Vérifiez et modifiez le contenu avant de sauvegarder.",
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de générer la note SOAP avec l’IA.",
+      );
+    } finally {
+      setAiLoadingId(null);
+    }
+  }
+
+  async function handleSoapSubmit(appointment: Appointment) {
+    const form = soapForms[appointment.id] ?? getInitialSoapForm(appointment);
+
+    const payload: SoapNotePayload = {
+      subjective: form.subjective.trim(),
+      objective: form.objective.trim(),
+      assessment: form.assessment.trim(),
+      plan: form.plan.trim(),
+    };
+
+    try {
+      setSoapLoadingId(appointment.id);
+      setError("");
+      setSoapMessage("");
+      setAiMessage("");
+
+      if (appointment.soap_note) {
+        await updateAppointmentSoapNote(appointment.id, payload);
+        setSoapMessage("Note SOAP mise à jour avec succès.");
+      } else {
+        await createAppointmentSoapNote(appointment.id, payload);
+        setSoapMessage("Note SOAP enregistrée avec succès.");
+      }
+
+      await loadRendezVousJour();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d’enregistrer la note SOAP.",
+      );
+    } finally {
+      setSoapLoadingId(null);
+    }
+  }
+
+  function renderActions(appointment: Appointment) {
+    const isLoading = actionLoadingId === appointment.id;
+
+    if (appointment.status === "PENDING") {
+      return (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => handleConfirm(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Confirmer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCancel(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
+
+    if (appointment.status === "CONFIRMED") {
+      return (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => handleComplete(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Terminer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCancel(appointment.id)}
+            disabled={isLoading}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
+
+    return <span className="text-xs text-slate-400">Aucune action</span>;
+  }
 
   if (loading) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
         Chargement des rendez-vous du jour...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-600">
-        {error}
-      </div>
-    );
-  }
-
-  if (rendezVous.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
-        Aucun rendez-vous pour aujourd’hui.
       </div>
     );
   }
@@ -137,51 +578,317 @@ export default function RendezVousJour() {
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        <table className="min-w-full border-separate border-spacing-0">
-          <thead>
-            <tr>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Heure
-              </th>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Patient
-              </th>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Motif
-              </th>
-              <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
-                Statut
-              </th>
-            </tr>
-          </thead>
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
-          <tbody>
-            {rendezVous.map((rdv) => (
-              <tr key={rdv.id} className="hover:bg-slate-50">
-                <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
-                  {rdv.heureDebut} - {rdv.heureFin}
-                </td>
-                <td className="border-b border-slate-100 px-4 py-4 text-sm font-medium text-slate-800">
-                  {rdv.patient}
-                </td>
-                <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
-                  {rdv.motif}
-                </td>
-                <td className="border-b border-slate-100 px-4 py-4 text-sm">
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getBadgeClass(
-                      rdv.statut,
-                    )}`}
-                  >
-                    {rdv.statut}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {aiMessage && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-700">
+          {aiMessage}
+        </div>
+      )}
+
+      {soapMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {soapMessage}
+        </div>
+      )}
+
+      {rendezVous.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
+          Aucun rendez-vous pour aujourd’hui.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rendezVous.map((appointment) => {
+            const statut = formatStatus(appointment.status);
+            const isSoapOpen = openSoapAppointmentId === appointment.id;
+            const soapForm =
+              soapForms[appointment.id] ?? getInitialSoapForm(appointment);
+            const isSoapSaving = soapLoadingId === appointment.id;
+            const isAiLoading = aiLoadingId === appointment.id;
+            const isAudioLoading = audioLoadingId === appointment.id;
+            const isRecording = recordingAppointmentId === appointment.id;
+            const anotherRecordingInProgress =
+              recordingAppointmentId !== null &&
+              recordingAppointmentId !== appointment.id;
+
+            return (
+              <div
+                key={appointment.id}
+                className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"
+              >
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border-separate border-spacing-0">
+                    <thead>
+                      <tr>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Heure
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Patient
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Motif
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Statut
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Actions
+                        </th>
+                        <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-600">
+                          Note SOAP
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      <tr className="hover:bg-slate-50">
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
+                          {formatTime(appointment.start_time)} -{" "}
+                          {formatTime(appointment.end_time)}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm font-medium text-slate-800">
+                          {appointment.patient_first_name}{" "}
+                          {appointment.patient_last_name}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-700">
+                          {appointment.reason?.trim() ||
+                            appointment.service_name}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getBadgeClass(
+                              statut,
+                            )}`}
+                          >
+                            {statut}
+                          </span>
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                          {renderActions(appointment)}
+                        </td>
+                        <td className="border-b border-slate-100 px-4 py-4 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => toggleSoapEditor(appointment)}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            {appointment.soap_note
+                              ? "Voir / Modifier"
+                              : "Rédiger"}
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {isSoapOpen && (
+                  <div className="border-t border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg font-semibold text-slate-900">
+                          Note SOAP
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {appointment.soap_note
+                            ? "Consultez ou modifiez la note SOAP associée à ce rendez-vous."
+                            : "Rédigez la note SOAP associée à ce rendez-vous."}
+                        </p>
+                      </div>
+
+                      {appointment.soap_note?.updated_at && (
+                        <div className="text-xs text-slate-500">
+                          Dernière mise à jour :{" "}
+                          {new Date(
+                            appointment.soap_note.updated_at,
+                          ).toLocaleString("fr-CA")}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
+                      <label className="mb-2 block text-sm font-medium text-violet-900">
+                        Notes rapides (IA)
+                      </label>
+                      <textarea
+                        value={quickNotes[appointment.id] ?? ""}
+                        onChange={(e) =>
+                          handleQuickNotesChange(appointment.id, e.target.value)
+                        }
+                        rows={3}
+                        className="w-full rounded-xl border border-violet-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-400"
+                        placeholder="Ex: Douleur genou 7/10, amplitude limitée, chaleur appliquée..."
+                      />
+
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <label className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                          {isAudioLoading
+                            ? "Transcription..."
+                            : "🎵 Importer un audio"}
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleAudioTranscription(
+                                appointment.id,
+                                e.target.files?.[0] ?? null,
+                              )
+                            }
+                            disabled={isAudioLoading || isRecording}
+                          />
+                        </label>
+
+                        {isRecording ? (
+                          <button
+                            type="button"
+                            onClick={handleStopRecording}
+                            disabled={isAudioLoading}
+                            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            ⏹️ Arrêter l’enregistrement
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleStartRecording(appointment.id)}
+                            disabled={
+                              isAudioLoading || anotherRecordingInProgress
+                            }
+                            className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            🎤 Démarrer l’enregistrement
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAI(appointment.id)}
+                          disabled={isAiLoading}
+                          className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {isAiLoading ? "Génération..." : "✨ Générer avec IA"}
+                        </button>
+
+                        <p className="text-xs text-violet-700">
+                          Importez un audio, enregistrez votre voix ou saisissez
+                          des notes, puis générez la note SOAP.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Subjectif
+                        </label>
+                        <textarea
+                          value={soapForm.subjective}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "subjective",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Symptômes rapportés par le patient, ressenti, historique pertinent..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Objectif
+                        </label>
+                        <textarea
+                          value={soapForm.objective}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "objective",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Observations cliniques, signes mesurables, examen objectif..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Analyse
+                        </label>
+                        <textarea
+                          value={soapForm.assessment}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "assessment",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Interprétation clinique, évaluation, hypothèses..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Plan
+                        </label>
+                        <textarea
+                          value={soapForm.plan}
+                          onChange={(e) =>
+                            handleSoapChange(
+                              appointment.id,
+                              "plan",
+                              e.target.value,
+                            )
+                          }
+                          rows={4}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                          placeholder="Plan de traitement, recommandations, suivi..."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSoapSubmit(appointment)}
+                        disabled={isSoapSaving}
+                        className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {isSoapSaving
+                          ? "Enregistrement..."
+                          : appointment.soap_note
+                            ? "Mettre à jour la note SOAP"
+                            : "Enregistrer la note SOAP"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOpenSoapAppointmentId(null)}
+                        className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Fermer
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

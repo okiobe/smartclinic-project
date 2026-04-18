@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   createAdminPractitioner,
   deleteAdminPractitioner,
@@ -67,7 +68,36 @@ function practitionerToEditForm(practitioner: Practitioner): EditForm {
   };
 }
 
+function normalizeCreateForm(form: CreateForm): CreateForm {
+  return {
+    ...form,
+    email: form.email.trim(),
+    password: form.password.trim(),
+    first_name: form.first_name.trim(),
+    last_name: form.last_name.trim(),
+    specialty: form.specialty.trim(),
+    bio: form.bio.trim(),
+    clinic_name: form.clinic_name.trim(),
+    phone: form.phone.trim(),
+  };
+}
+
+function normalizeEditForm(form: EditForm): EditForm {
+  return {
+    ...form,
+    email: form.email.trim(),
+    first_name: form.first_name.trim(),
+    last_name: form.last_name.trim(),
+    specialty: form.specialty.trim(),
+    bio: form.bio.trim(),
+    clinic_name: form.clinic_name.trim(),
+    phone: form.phone.trim(),
+  };
+}
+
 export default function Praticiens() {
+  const navigate = useNavigate();
+
   const [practitioners, setPractitioners] = useState<Practitioner[]>([]);
   const [services, setServices] = useState<Service[]>([]);
 
@@ -93,6 +123,7 @@ export default function Praticiens() {
     if (selectedPractitioner) {
       const refreshedSelected =
         data.find((p) => p.id === selectedPractitioner.id) ?? null;
+
       setSelectedPractitioner(refreshedSelected);
       setEditForm(
         refreshedSelected
@@ -107,6 +138,9 @@ export default function Praticiens() {
     try {
       const data = await getAdminServices();
       setServices(data);
+    } catch {
+      setServices([]);
+      throw new Error("Impossible de charger les services.");
     } finally {
       setLoadingServices(false);
     }
@@ -118,7 +152,7 @@ export default function Praticiens() {
       setError("");
       await Promise.all([loadPractitioners(), loadServices()]);
     } catch {
-      setError("Erreur lors du chargement des praticiens.");
+      setError("Erreur lors du chargement des praticiens et des services.");
     } finally {
       setLoading(false);
     }
@@ -129,8 +163,8 @@ export default function Praticiens() {
   }, []);
 
   function clearFeedback() {
-    if (error) setError("");
-    if (message) setMessage("");
+    setError("");
+    setMessage("");
   }
 
   function handleCreateChange(
@@ -204,11 +238,13 @@ export default function Praticiens() {
   async function handleCreateSubmit(e: React.FormEvent) {
     e.preventDefault();
 
+    const payload = normalizeCreateForm(createForm);
+
     if (
-      !createForm.email ||
-      !createForm.password ||
-      !createForm.first_name ||
-      !createForm.last_name
+      !payload.email ||
+      !payload.password ||
+      !payload.first_name ||
+      !payload.last_name
     ) {
       setError("Veuillez remplir les champs obligatoires.");
       return;
@@ -219,7 +255,7 @@ export default function Praticiens() {
       setError("");
       setMessage("");
 
-      await createAdminPractitioner(createForm);
+      await createAdminPractitioner(payload);
 
       setMessage("Praticien créé avec succès.");
       setCreateForm(initialCreateForm);
@@ -239,7 +275,9 @@ export default function Praticiens() {
       return;
     }
 
-    if (!editForm.email || !editForm.first_name || !editForm.last_name) {
+    const payload = normalizeEditForm(editForm);
+
+    if (!payload.email || !payload.first_name || !payload.last_name) {
       setError("Les champs prénom, nom et email sont obligatoires.");
       return;
     }
@@ -251,7 +289,7 @@ export default function Praticiens() {
 
       const updated = await updateAdminPractitioner(
         selectedPractitioner.id,
-        editForm,
+        payload,
       );
 
       setPractitioners((prev) =>
@@ -644,6 +682,16 @@ export default function Praticiens() {
                       className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5"
                     >
                       Modifier
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate(`/admin/practitioners/${p.id}/availabilities`)
+                      }
+                      className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5"
+                    >
+                      Disponibilités
                     </button>
 
                     <button

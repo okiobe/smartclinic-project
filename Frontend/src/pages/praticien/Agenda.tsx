@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getAppointments,
+  confirmAppointment,
+  cancelAppointment,
+  completeAppointment,
   type Appointment,
 } from "../../services/appointments.api";
 
@@ -66,6 +69,7 @@ export default function Agenda() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   async function loadAgenda() {
     try {
@@ -142,6 +146,109 @@ export default function Agenda() {
     }
   }
 
+  async function handleConfirm(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      await confirmAppointment(appointmentId);
+      await loadAgenda();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de confirmer ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleCancel(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      await cancelAppointment(appointmentId);
+      await loadAgenda();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d’annuler ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleComplete(appointmentId: number) {
+    try {
+      setActionLoadingId(appointmentId);
+      setError("");
+      await completeAppointment(appointmentId);
+      await loadAgenda();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de terminer ce rendez-vous.",
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  function renderActions(appointment: Appointment) {
+    const isLoading = actionLoadingId === appointment.id;
+
+    if (appointment.status === "PENDING") {
+      return (
+        <div className="mt-2 flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => handleConfirm(appointment.id)}
+            disabled={isLoading}
+            className="rounded-md bg-green-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Confirmer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCancel(appointment.id)}
+            disabled={isLoading}
+            className="rounded-md bg-red-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
+
+    if (appointment.status === "CONFIRMED") {
+      return (
+        <div className="mt-2 flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => handleComplete(appointment.id)}
+            disabled={isLoading}
+            className="rounded-md bg-blue-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Terminer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCancel(appointment.id)}
+            disabled={isLoading}
+            className="rounded-md bg-red-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
+
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -210,7 +317,7 @@ export default function Agenda() {
                   return (
                     <div
                       key={dateKey}
-                      className={`min-h-[140px] rounded-xl border p-2 ${
+                      className={`min-h-[180px] rounded-xl border p-2 ${
                         inCurrentMonth
                           ? "border-slate-200 bg-white"
                           : "border-slate-100 bg-slate-50 text-slate-400"
@@ -226,7 +333,7 @@ export default function Agenda() {
                             Aucun rendez-vous
                           </div>
                         ) : (
-                          dayAppointments.slice(0, 4).map((appointment) => (
+                          dayAppointments.slice(0, 3).map((appointment) => (
                             <div
                               key={appointment.id}
                               className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
@@ -235,14 +342,17 @@ export default function Agenda() {
                                 {formatTime(appointment.start_time)} -{" "}
                                 {formatTime(appointment.end_time)}
                               </div>
+
                               <div className="truncate text-slate-600">
                                 {appointment.patient_first_name}{" "}
                                 {appointment.patient_last_name}
                               </div>
+
                               <div className="truncate text-slate-500">
                                 {appointment.reason?.trim() ||
                                   appointment.service_name}
                               </div>
+
                               <div className="mt-1">
                                 <span
                                   className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBadgeClass(
@@ -252,13 +362,15 @@ export default function Agenda() {
                                   {formatStatus(appointment.status)}
                                 </span>
                               </div>
+
+                              {renderActions(appointment)}
                             </div>
                           ))
                         )}
 
-                        {dayAppointments.length > 4 && (
+                        {dayAppointments.length > 3 && (
                           <div className="text-xs text-slate-500">
-                            + {dayAppointments.length - 4} autre(s)
+                            + {dayAppointments.length - 3} autre(s)
                           </div>
                         )}
                       </div>

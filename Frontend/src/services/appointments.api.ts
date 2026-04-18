@@ -1,5 +1,29 @@
 import { apiRequest } from "./apiClient";
 
+export type AppointmentStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "CANCELLED"
+  | "COMPLETED";
+
+export type SoapNote = {
+  id: number;
+  appointment?: number;
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SoapNotePayload = {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+};
+
 export type Appointment = {
   id: number;
 
@@ -19,20 +43,26 @@ export type Appointment = {
   appointment_date: string;
   start_time: string;
   end_time: string;
-  status: string;
+  status: AppointmentStatus;
   reason: string;
   created_at?: string;
+
+  soap_note?: SoapNote | null;
 };
 
 export type CreateAppointmentPayload = {
-  patient: number;
+  patient?: number;
   practitioner: number;
   service: number;
   appointment_date: string;
   start_time: string;
   end_time: string;
-  status?: string;
+  status?: AppointmentStatus;
   reason?: string;
+};
+
+export type UpdateAppointmentStatusPayload = {
+  status: AppointmentStatus;
 };
 
 export async function createAppointment(
@@ -50,4 +80,97 @@ export async function getAppointments(
   return apiRequest<Appointment[]>(endpoint, {
     method: "GET",
   });
+}
+
+export async function getAppointmentDetail(
+  appointmentId: number,
+): Promise<Appointment> {
+  return apiRequest<Appointment>(`/appointments/${appointmentId}/`, {
+    method: "GET",
+  });
+}
+
+export async function updateAppointmentStatus(
+  appointmentId: number,
+  payload: UpdateAppointmentStatusPayload,
+): Promise<Appointment> {
+  return apiRequest<Appointment>(`/appointments/${appointmentId}/status/`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function confirmAppointment(
+  appointmentId: number,
+): Promise<Appointment> {
+  return updateAppointmentStatus(appointmentId, { status: "CONFIRMED" });
+}
+
+export async function cancelAppointment(
+  appointmentId: number,
+): Promise<Appointment> {
+  return updateAppointmentStatus(appointmentId, { status: "CANCELLED" });
+}
+
+export async function completeAppointment(
+  appointmentId: number,
+): Promise<Appointment> {
+  return updateAppointmentStatus(appointmentId, { status: "COMPLETED" });
+}
+
+export async function getAppointmentSoapNote(
+  appointmentId: number,
+): Promise<SoapNote> {
+  return apiRequest<SoapNote>(`/appointments/${appointmentId}/soap-note/`, {
+    method: "GET",
+  });
+}
+
+export async function createAppointmentSoapNote(
+  appointmentId: number,
+  payload: SoapNotePayload,
+): Promise<SoapNote> {
+  return apiRequest<SoapNote>(`/appointments/${appointmentId}/soap-note/`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateAppointmentSoapNote(
+  appointmentId: number,
+  payload: Partial<SoapNotePayload>,
+): Promise<SoapNote> {
+  return apiRequest<SoapNote>(`/appointments/${appointmentId}/soap-note/`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function generateSoapWithAI(
+  appointmentId: number,
+  notes: string,
+): Promise<SoapNotePayload> {
+  return apiRequest<SoapNotePayload>(
+    `/appointments/${appointmentId}/soap-note/ai-draft/`,
+    {
+      method: "POST",
+      body: { notes },
+    },
+  );
+}
+
+export async function transcribeAppointmentAudio(
+  appointmentId: number,
+  audioFile: File,
+): Promise<{ transcript: string }> {
+  const formData = new FormData();
+  formData.append("audio", audioFile);
+
+  return apiRequest<{ transcript: string }>(
+    `/appointments/${appointmentId}/soap-note/transcribe/`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
 }

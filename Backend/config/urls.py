@@ -11,10 +11,11 @@ urlpatterns = [
 
     path("api/practitioners/", include("apps.practitioners.urls")),
     path("api/appointments/", include("apps.appointments.urls")),
-    
+
     path("api/admin/practitioners/", include("apps.practitioners.admin_urls")),
 
     path("api/patients/", include("apps.patients.urls")),
-
     path("api/admin/patients/", include("apps.patients.admin_urls")),
+
+    path("api/", include("apps.availability.urls")),
 ]

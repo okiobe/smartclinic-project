@@ -2,6 +2,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.audit.utils import log_audit_event
 from apps.core.permissions import IsAdminUserRole
 from .models import Patient
 from .serializers import PatientSerializer, AdminPatientSerializer
@@ -41,6 +42,18 @@ class MePatientView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
+        log_audit_event(
+            user=request.user,
+            action="UPDATE",
+            module="patients",
+            object_type="Patient",
+            object_id=patient.id,
+            description=(
+                f"Mise à jour du profil patient "
+                f"'{patient.user.first_name} {patient.user.last_name}'."
+            ),
+        )
+
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -66,6 +79,18 @@ class AdminPatientDetailView(generics.RetrieveDestroyAPIView):
         )
 
     def perform_destroy(self, instance):
+        patient_id = instance.id
+        patient_name = f"{instance.user.first_name} {instance.user.last_name}".strip()
+
         user = instance.user
         instance.delete()
         user.delete()
+
+        log_audit_event(
+            user=self.request.user,
+            action="DELETE",
+            module="patients",
+            object_type="Patient",
+            object_id=patient_id,
+            description=f"Suppression du patient '{patient_name}'.",
+        )

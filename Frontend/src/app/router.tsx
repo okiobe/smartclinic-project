@@ -25,6 +25,7 @@ import AdminPractitionerAvailabilities from "../pages/admin/PraticienDisponibili
 import AdminPatients from "../pages/admin/Patients";
 import AdminSettings from "../pages/admin/Parametres";
 import PlanningPersonnel from "../pages/admin/PlanningPersonnel";
+import AdminAudit from "../pages/admin/Audit";
 
 import Forbidden403 from "../pages/system/Forbidden403";
 import NotFound404 from "../pages/system/NotFound404";
@@ -177,6 +178,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute roles={["ADMIN"]}>
             <PlanningPersonnel />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/admin/audit",
+        element: (
+          <ProtectedRoute roles={["ADMIN"]}>
+            <AdminAudit />
           </ProtectedRoute>
         ),
       },

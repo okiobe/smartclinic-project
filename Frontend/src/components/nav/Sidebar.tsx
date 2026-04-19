@@ -30,6 +30,7 @@ export default function Sidebar() {
             { to: "/admin/services", label: "Services" },
             { to: "/admin/practitioners", label: "Praticiens" },
             { to: "/admin/patients", label: "Patients" },
+            { to: "/admin/audit", label: "Audit" },
             { to: "/admin/settings", label: "Paramètres" },
           ];
 

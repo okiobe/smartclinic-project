@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   createAdminPractitionerAvailability,
   deleteAdminAvailability,
@@ -37,6 +37,7 @@ function formatTime(time: string) {
 }
 
 export default function PraticienDisponibilites() {
+  const navigate = useNavigate();
   const { id } = useParams();
   const practitionerId = Number(id);
 
@@ -164,10 +165,24 @@ export default function PraticienDisponibilites() {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-black/10 bg-white/60 p-6">
-        <h1 className="text-xl font-semibold">Disponibilités du praticien</h1>
-        <p className="mt-2 text-sm text-black/60">
-          Définissez les plages horaires du praticien sélectionné.
-        </p>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold">
+              Disponibilités du praticien
+            </h1>
+            <p className="mt-2 text-sm text-black/60">
+              Définissez les plages horaires du praticien sélectionné.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => navigate("/admin/practitioners")}
+            className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-medium text-black transition hover:bg-black/5"
+          >
+            Retour aux praticiens
+          </button>
+        </div>
       </div>
 
       {error && (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createService,
   deleteService,
@@ -50,8 +50,11 @@ function serviceToEditForm(service: Service): EditForm {
 }
 
 export default function Services() {
+  const createSectionRef = useRef<HTMLElement | null>(null);
+
   const [services, setServices] = useState<Service[]>([]);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [editingService, setEditingService] = useState<Service | null>(null);
 
   const [createForm, setCreateForm] = useState<CreateForm>(initialCreateForm);
   const [editForm, setEditForm] = useState<EditForm>(initialEditForm);
@@ -75,11 +78,17 @@ export default function Services() {
       if (selectedService) {
         const refreshedSelected =
           data.find((service) => service.id === selectedService.id) ?? null;
-
         setSelectedService(refreshedSelected);
+      }
+
+      if (editingService) {
+        const refreshedEditing =
+          data.find((service) => service.id === editingService.id) ?? null;
+
+        setEditingService(refreshedEditing);
         setEditForm(
-          refreshedSelected
-            ? serviceToEditForm(refreshedSelected)
+          refreshedEditing
+            ? serviceToEditForm(refreshedEditing)
             : initialEditForm,
         );
       }
@@ -97,6 +106,13 @@ export default function Services() {
   function clearFeedback() {
     setError("");
     setMessage("");
+  }
+
+  function handleScrollToCreate() {
+    createSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
   function handleCreateChange(
@@ -138,13 +154,27 @@ export default function Services() {
   }
 
   function handleSelectService(service: Service) {
+    const isSameService = selectedService?.id === service.id;
+
+    if (isSameService && !editingService) {
+      setSelectedService(null);
+      clearFeedback();
+      return;
+    }
+
     setSelectedService(service);
+    clearFeedback();
+  }
+
+  function handleOpenEditService(service: Service) {
+    setSelectedService(service);
+    setEditingService(service);
     setEditForm(serviceToEditForm(service));
     clearFeedback();
   }
 
   function handleCancelEdit() {
-    setSelectedService(null);
+    setEditingService(null);
     setEditForm(initialEditForm);
     clearFeedback();
   }
@@ -173,6 +203,7 @@ export default function Services() {
       setServices((prev) => [...prev, created]);
       setCreateForm(initialCreateForm);
       setMessage("Service créé avec succès.");
+      handleScrollToCreate();
     } catch {
       setError("Impossible de créer le service.");
     } finally {
@@ -183,8 +214,8 @@ export default function Services() {
   async function handleUpdateSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!selectedService) {
-      setError("Veuillez sélectionner un service à modifier.");
+    if (!editingService) {
+      setError("Veuillez sélectionner le bouton Modifier d'un service.");
       return;
     }
 
@@ -198,7 +229,7 @@ export default function Services() {
       setError("");
       setMessage("");
 
-      const updated = await updateService(selectedService.id, {
+      const updated = await updateService(editingService.id, {
         name: editForm.name,
         description: editForm.description,
         duration_minutes: Number(editForm.duration_minutes),
@@ -210,6 +241,7 @@ export default function Services() {
         prev.map((service) => (service.id === updated.id ? updated : service)),
       );
       setSelectedService(updated);
+      setEditingService(updated);
       setEditForm(serviceToEditForm(updated));
       setMessage("Service modifié avec succès.");
     } catch {
@@ -239,6 +271,10 @@ export default function Services() {
 
       if (selectedService?.id === serviceId) {
         setSelectedService(null);
+      }
+
+      if (editingService?.id === serviceId) {
+        setEditingService(null);
         setEditForm(initialEditForm);
       }
 
@@ -252,11 +288,23 @@ export default function Services() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Services</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Créer, modifier ou supprimer les services de la clinique.
-        </p>
+      <div className="rounded-2xl border border-black/10 bg-white/60 p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Services</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Créer, modifier ou supprimer les services de la clinique.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleScrollToCreate}
+            className="rounded-full bg-teal-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-teal-600"
+          >
+            Ajouter service
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -273,91 +321,89 @@ export default function Services() {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <section className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold">Créer un service</h2>
+          <h2 className="text-lg font-semibold">Liste des services</h2>
 
-          <form onSubmit={handleCreateSubmit} className="mt-6 space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Nom
-              </label>
-              <input
-                name="name"
-                value={createForm.name}
-                onChange={handleCreateChange}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-              />
+          {loading ? (
+            <p className="mt-4 text-sm text-slate-600">
+              Chargement des services...
+            </p>
+          ) : services.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-600">Aucun service trouvé.</p>
+          ) : (
+            <div className="mt-4 max-h-[70vh] space-y-3 overflow-y-auto pr-2">
+              {services.map((service) => {
+                const isSelected = selectedService?.id === service.id;
+
+                return (
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => handleSelectService(service)}
+                    className={`w-full rounded-xl border p-4 text-left transition ${
+                      isSelected
+                        ? "border-teal-400 bg-teal-50"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-4">
+                      <div>
+                        <div className="font-medium text-slate-900">
+                          {service.name}
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          {service.description || "Aucune description"}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Durée : {service.duration_minutes} min
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Prix : {service.price ? `${service.price} $` : "—"}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Statut : {service.is_active ? "Actif" : "Inactif"}
+                        </div>
+                      </div>
+
+                      {isSelected && (
+                        <div
+                          className="flex flex-col gap-2 border-t border-black/10 pt-3 sm:flex-row"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditService(service)}
+                            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            Modifier
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteService(service.id)}
+                            disabled={deletingId === service.id}
+                            className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-70"
+                          >
+                            {deletingId === service.id
+                              ? "Suppression..."
+                              : "Supprimer"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Description
-              </label>
-              <textarea
-                name="description"
-                value={createForm.description}
-                onChange={handleCreateChange}
-                rows={4}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-              />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Durée (minutes)
-                </label>
-                <input
-                  type="number"
-                  name="duration_minutes"
-                  value={createForm.duration_minutes}
-                  onChange={handleCreateChange}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Prix
-                </label>
-                <input
-                  name="price"
-                  value={createForm.price}
-                  onChange={handleCreateChange}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
-                />
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                name="is_active"
-                checked={createForm.is_active}
-                onChange={handleCreateChange}
-              />
-              Service actif
-            </label>
-
-            <button
-              type="submit"
-              disabled={isCreating}
-              className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70"
-            >
-              {isCreating ? "Création..." : "Créer le service"}
-            </button>
-          </form>
+          )}
         </section>
 
         <section className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold">
-            {selectedService
-              ? "Modifier le service"
-              : "Sélectionner un service"}
-          </h2>
+          <h2 className="text-lg font-semibold">Modifier le service</h2>
 
-          {!selectedService ? (
+          {!editingService ? (
             <p className="mt-4 text-sm text-slate-600">
-              Sélectionne un service dans la liste pour le modifier.
+              Sélectionne un service dans la liste, puis clique sur le bouton
+              Modifier pour afficher ses informations ici.
             </p>
           ) : (
             <form onSubmit={handleUpdateSubmit} className="mt-6 space-y-4">
@@ -445,70 +491,83 @@ export default function Services() {
         </section>
       </div>
 
-      <section className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Liste des services</h2>
+      <section
+        ref={createSectionRef}
+        className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
+      >
+        <h2 className="text-lg font-semibold">Créer un service</h2>
 
-        {loading ? (
-          <p className="mt-4 text-sm text-slate-600">
-            Chargement des services...
-          </p>
-        ) : services.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-600">Aucun service trouvé.</p>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {services.map((service) => (
-              <div
-                key={service.id}
-                className={`rounded-xl border p-4 ${
-                  selectedService?.id === service.id
-                    ? "border-teal-400 bg-teal-50"
-                    : "border-slate-200"
-                }`}
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="font-medium text-slate-900">
-                      {service.name}
-                    </div>
-                    <div className="text-sm text-slate-600">
-                      {service.description || "Aucune description"}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Durée : {service.duration_minutes} min
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Prix : {service.price ? `${service.price} $` : "—"}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Statut : {service.is_active ? "Actif" : "Inactif"}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleSelectService(service)}
-                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Modifier
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteService(service.id)}
-                      disabled={deletingId === service.id}
-                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-70"
-                    >
-                      {deletingId === service.id
-                        ? "Suppression..."
-                        : "Supprimer"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+        <form onSubmit={handleCreateSubmit} className="mt-6 space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Nom
+            </label>
+            <input
+              name="name"
+              value={createForm.name}
+              onChange={handleCreateChange}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
+            />
           </div>
-        )}
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Description
+            </label>
+            <textarea
+              name="description"
+              value={createForm.description}
+              onChange={handleCreateChange}
+              rows={4}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Durée (minutes)
+              </label>
+              <input
+                type="number"
+                name="duration_minutes"
+                value={createForm.duration_minutes}
+                onChange={handleCreateChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Prix
+              </label>
+              <input
+                name="price"
+                value={createForm.price}
+                onChange={handleCreateChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              name="is_active"
+              checked={createForm.is_active}
+              onChange={handleCreateChange}
+            />
+            Service actif
+          </label>
+
+          <button
+            type="submit"
+            disabled={isCreating}
+            className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70"
+          >
+            {isCreating ? "Création..." : "Créer le service"}
+          </button>
+        </form>
       </section>
     </div>
   );

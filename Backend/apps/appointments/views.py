@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from .ai_service import generate_soap_from_notes
 from .audio_service import transcribe_audio_file
 
+from apps.audit.utils import log_audit_event
 from .models import Appointment, SoapNote
 from .serializers import (
     AppointmentSerializer,
@@ -65,6 +66,23 @@ class AppointmentListCreateView(AppointmentAccessMixin, generics.ListCreateAPIVi
             return AppointmentCreateSerializer
         return AppointmentSerializer
 
+    def perform_create(self, serializer):
+        appointment = serializer.save()
+
+        log_audit_event(
+            user=self.request.user,
+            action="CREATE",
+            module="appointments",
+            object_type="Appointment",
+            object_id=appointment.id,
+            description=(
+                f"Création du rendez-vous #{appointment.id} pour "
+                f"{appointment.patient.user.first_name} {appointment.patient.user.last_name} "
+                f"avec {appointment.practitioner.user.first_name} {appointment.practitioner.user.last_name} "
+                f"le {appointment.appointment_date} à {appointment.start_time}."
+            ),
+        )
+
 
 class AppointmentDetailView(AppointmentAccessMixin, generics.RetrieveAPIView):
     serializer_class = AppointmentSerializer
@@ -95,8 +113,21 @@ class AppointmentStatusUpdateView(AppointmentAccessMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        old_status = appointment.status
         appointment.status = new_status
         appointment.save(update_fields=["status"])
+
+        log_audit_event(
+            user=request.user,
+            action="STATUS_CHANGE",
+            module="appointments",
+            object_type="Appointment",
+            object_id=appointment.id,
+            description=(
+                f"Changement de statut du rendez-vous #{appointment.id} : "
+                f"{old_status} -> {new_status}."
+            ),
+        )
 
         return Response(
             AppointmentSerializer(appointment).data,
@@ -124,6 +155,15 @@ class AppointmentCancelView(AppointmentAccessMixin, APIView):
 
         appointment.status = "CANCELLED"
         appointment.save(update_fields=["status"])
+
+        log_audit_event(
+            user=request.user,
+            action="CANCEL",
+            module="appointments",
+            object_type="Appointment",
+            object_id=appointment.id,
+            description=f"Annulation du rendez-vous #{appointment.id}.",
+        )
 
         return Response(
             AppointmentSerializer(appointment).data,
@@ -179,7 +219,16 @@ class AppointmentSoapNoteView(AppointmentAccessMixin, APIView):
 
         serializer = SoapNoteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(appointment=appointment)
+        soap_note = serializer.save(appointment=appointment)
+
+        log_audit_event(
+            user=request.user,
+            action="CREATE",
+            module="soap",
+            object_type="SoapNote",
+            object_id=soap_note.id,
+            description=f"Création d'une note SOAP pour le rendez-vous #{appointment.id}.",
+        )
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -214,8 +263,18 @@ class AppointmentSoapNoteView(AppointmentAccessMixin, APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
+        log_audit_event(
+            user=request.user,
+            action="UPDATE",
+            module="soap",
+            object_type="SoapNote",
+            object_id=soap_note.id,
+            description=f"Modification de la note SOAP du rendez-vous #{appointment.id}.",
+        )
+
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
+
 class AppointmentSoapNoteAIDraftView(AppointmentAccessMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -245,6 +304,18 @@ class AppointmentSoapNoteAIDraftView(AppointmentAccessMixin, APIView):
         try:
             soap = generate_soap_from_notes(notes)
 
+            log_audit_event(
+                user=request.user,
+                action="CREATE",
+                module="soap_ai",
+                object_type="SoapAIDraft",
+                object_id=appointment.id,
+                description=(
+                    f"Génération IA d'une proposition SOAP pour le rendez-vous "
+                    f"#{appointment.id}."
+                ),
+            )
+
             return Response(soap, status=status.HTTP_200_OK)
 
         except Exception as e:
@@ -252,7 +323,8 @@ class AppointmentSoapNoteAIDraftView(AppointmentAccessMixin, APIView):
                 {"detail": f"Erreur IA: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        
+
+
 class AppointmentSoapNoteTranscriptionView(AppointmentAccessMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -287,6 +359,18 @@ class AppointmentSoapNoteTranscriptionView(AppointmentAccessMixin, APIView):
                     {"detail": "La transcription audio est vide."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
+            log_audit_event(
+                user=request.user,
+                action="CREATE",
+                module="soap_audio",
+                object_type="AudioTranscription",
+                object_id=appointment.id,
+                description=(
+                    f"Transcription audio effectuée pour le rendez-vous "
+                    f"#{appointment.id}."
+                ),
+            )
 
             return Response(
                 {"transcript": transcript},

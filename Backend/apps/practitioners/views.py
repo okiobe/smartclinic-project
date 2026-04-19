@@ -1,5 +1,6 @@
 from rest_framework import generics, permissions
 
+from apps.audit.utils import log_audit_event
 from apps.availability.models import AvailabilityRule
 from apps.availability.serializers import AvailabilityRuleSerializer
 from apps.core.permissions import IsAdminUserRole
@@ -62,6 +63,21 @@ class AdminPractitionerListCreateView(generics.ListCreateAPIView):
             "services_offered__service"
         ).order_by("user__first_name", "user__last_name")
 
+    def perform_create(self, serializer):
+        practitioner = serializer.save()
+
+        log_audit_event(
+            user=self.request.user,
+            action="CREATE",
+            module="practitioners",
+            object_type="Practitioner",
+            object_id=practitioner.id,
+            description=(
+                f"Création du praticien "
+                f"'{practitioner.user.first_name} {practitioner.user.last_name}'."
+            ),
+        )
+
 
 class AdminPractitionerDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminUserRole]
@@ -75,7 +91,34 @@ class AdminPractitionerDetailView(generics.RetrieveUpdateDestroyAPIView):
             return PractitionerUpdateSerializer
         return PractitionerSerializer
 
+    def perform_update(self, serializer):
+        practitioner = serializer.save()
+
+        log_audit_event(
+            user=self.request.user,
+            action="UPDATE",
+            module="practitioners",
+            object_type="Practitioner",
+            object_id=practitioner.id,
+            description=(
+                f"Modification du praticien "
+                f"'{practitioner.user.first_name} {practitioner.user.last_name}'."
+            ),
+        )
+
     def perform_destroy(self, instance):
+        practitioner_id = instance.id
+        full_name = f"{instance.user.first_name} {instance.user.last_name}".strip()
+
         user = instance.user
         instance.delete()
         user.delete()
+
+        log_audit_event(
+            user=self.request.user,
+            action="DELETE",
+            module="practitioners",
+            object_type="Practitioner",
+            object_id=practitioner_id,
+            description=f"Suppression du praticien '{full_name}'.",
+        )

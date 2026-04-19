@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.availability",
     "apps.appointments",
     "apps.core",
+    "apps.audit",
 ]
 
 

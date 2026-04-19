@@ -11,6 +11,7 @@ import Register from "../pages/public/Register";
 
 import PatientDashboard from "../pages/patient/TableauDeBord";
 import PatientAppointments from "../pages/patient/RendezVous";
+import PatientMedicalRecord from "../pages/patient/DossierMedical";
 import PatientProfile from "../pages/patient/Profil";
 
 import PractitionerDashboard from "../pages/praticien/TableauDeBord";
@@ -72,6 +73,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute roles={["PATIENT"]}>
             <PatientAppointments />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/patient/medical-record",
+        element: (
+          <ProtectedRoute roles={["PATIENT"]}>
+            <PatientMedicalRecord />
           </ProtectedRoute>
         ),
       },

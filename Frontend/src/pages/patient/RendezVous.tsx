@@ -16,10 +16,14 @@ type RescheduleForm = {
   start_time: string;
 };
 
+type FilterPeriod = "DAY" | "WEEK" | "MONTH" | "YEAR";
+
 const initialRescheduleForm: RescheduleForm = {
   appointment_date: "",
   start_time: "",
 };
+
+const ITEMS_PER_PAGE = 5;
 
 function formatTime(time: string) {
   return time.slice(0, 5);
@@ -85,12 +89,126 @@ function getTodayDateInputValue() {
   return `${year}-${month}-${day}`;
 }
 
+function getCurrentMonthValue() {
+  return getTodayDateInputValue().slice(0, 7);
+}
+
+function getCurrentYearValue() {
+  return String(new Date().getFullYear());
+}
+
+function getCurrentWeekValue() {
+  const now = new Date();
+  const date = new Date(
+    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
+  );
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(
+    ((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+  );
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+function getWeekRangeFromValue(weekValue: string) {
+  const [yearPart, weekPart] = weekValue.split("-W");
+  const year = Number(yearPart);
+  const week = Number(weekPart);
+
+  if (!year || !week) return null;
+
+  const simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+  const dayOfWeek = simple.getUTCDay() || 7;
+  const monday = new Date(simple);
+
+  if (dayOfWeek <= 4) {
+    monday.setUTCDate(simple.getUTCDate() - dayOfWeek + 1);
+  } else {
+    monday.setUTCDate(simple.getUTCDate() + 8 - dayOfWeek);
+  }
+
+  monday.setUTCHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  sunday.setUTCHours(23, 59, 59, 999);
+
+  return { start: monday, end: sunday };
+}
+
+function matchesSelectedPeriod(
+  dateString: string,
+  period: FilterPeriod,
+  selectedValue: string,
+) {
+  const target = new Date(`${dateString}T00:00:00`);
+
+  if (period === "DAY") {
+    return dateString === selectedValue;
+  }
+
+  if (period === "MONTH") {
+    return dateString.slice(0, 7) === selectedValue;
+  }
+
+  if (period === "YEAR") {
+    return dateString.slice(0, 4) === selectedValue;
+  }
+
+  const range = getWeekRangeFromValue(selectedValue);
+  if (!range) return false;
+
+  return target >= range.start && target <= range.end;
+}
+
+function getPeriodLabel(period: FilterPeriod) {
+  switch (period) {
+    case "DAY":
+      return "Jour";
+    case "WEEK":
+      return "Semaine";
+    case "MONTH":
+      return "Mois";
+    case "YEAR":
+      return "Année";
+    default:
+      return period;
+  }
+}
+
+function getDefaultFilterValue(period: FilterPeriod) {
+  switch (period) {
+    case "DAY":
+      return getTodayDateInputValue();
+    case "WEEK":
+      return getCurrentWeekValue();
+    case "MONTH":
+      return getCurrentMonthValue();
+    case "YEAR":
+      return getCurrentYearValue();
+    default:
+      return getCurrentMonthValue();
+  }
+}
+
 function isPastAppointmentDate(dateString: string) {
   return dateString < getTodayDateInputValue();
 }
 
+function getAppointmentDateTime(appointment: Appointment) {
+  return new Date(
+    `${appointment.appointment_date}T${appointment.start_time}`,
+  ).getTime();
+}
+
 export default function RendezVous() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [filterPeriod, setFilterPeriod] = useState<FilterPeriod>("MONTH");
+  const [filterValue, setFilterValue] = useState<string>(
+    getDefaultFilterValue("MONTH"),
+  );
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
@@ -162,6 +280,45 @@ export default function RendezVous() {
   useEffect(() => {
     loadAppointments();
   }, []);
+
+  const historicalAppointments = useMemo(() => {
+    return [...appointments]
+      .filter((appointment) =>
+        matchesSelectedPeriod(
+          appointment.appointment_date,
+          filterPeriod,
+          filterValue,
+        ),
+      )
+      .sort((a, b) => getAppointmentDateTime(b) - getAppointmentDateTime(a));
+  }, [appointments, filterPeriod, filterValue]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(historicalAppointments.length / ITEMS_PER_PAGE),
+  );
+
+  const paginatedAppointments = useMemo(() => {
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    return historicalAppointments.slice(start, start + ITEMS_PER_PAGE);
+  }, [historicalAppointments, page]);
+
+  useEffect(() => {
+    setFilterValue(getDefaultFilterValue(filterPeriod));
+    setPage(1);
+    closeDetails();
+  }, [filterPeriod]);
+
+  useEffect(() => {
+    setPage(1);
+    closeDetails();
+  }, [filterValue]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   async function handleShowDetails(appointmentId: number) {
     if (selectedAppointment?.id === appointmentId) {
@@ -448,7 +605,7 @@ export default function RendezVous() {
       <div className="rounded-2xl border border-black/10 bg-white/60 p-6">
         <h1 className="text-xl font-semibold">Mes rendez-vous</h1>
         <p className="mt-2 text-black/60">
-          Consultez vos rendez-vous à venir et gérez vos
+          Consultez l’historique de vos rendez-vous et gérez vos
           annulations/reprogrammations.
         </p>
       </div>
@@ -530,7 +687,7 @@ export default function RendezVous() {
                   value={rescheduleForm.appointment_date}
                   onChange={handleRescheduleDateChange}
                   min={getTodayDateInputValue()}
-                  className="border w-full p-3 rounded-xl"
+                  className="border w-full rounded-xl p-3"
                 />
               </div>
 
@@ -547,7 +704,7 @@ export default function RendezVous() {
                     <select
                       value={rescheduleForm.start_time}
                       onChange={handleRescheduleSlotChange}
-                      className="border w-full p-3 rounded-xl"
+                      className="border w-full rounded-xl p-3"
                     >
                       <option value="">Choisir un créneau</option>
                       {availableSlots.map((slot) => (
@@ -576,7 +733,7 @@ export default function RendezVous() {
                   type="text"
                   value={calculatedEndTime ? calculatedEndTime.slice(0, 5) : ""}
                   readOnly
-                  className="border w-full p-3 rounded-xl bg-slate-50"
+                  className="border w-full rounded-xl bg-slate-50 p-3"
                   placeholder="Calculée automatiquement"
                 />
               </div>
@@ -618,6 +775,86 @@ export default function RendezVous() {
           </div>
         )}
 
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-black/10 bg-white p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">
+                Historique des rendez-vous
+              </h2>
+              <p className="mt-1 text-sm text-black/60">
+                Filtrez vos rendez-vous par date réelle.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {(["DAY", "WEEK", "MONTH", "YEAR"] as FilterPeriod[]).map(
+                (period) => (
+                  <button
+                    key={period}
+                    type="button"
+                    onClick={() => setFilterPeriod(period)}
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                      filterPeriod === period
+                        ? "bg-teal-500 text-white"
+                        : "border border-black/10 bg-white text-black hover:bg-black/5"
+                    }`}
+                  >
+                    {getPeriodLabel(period)}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
+
+          <div>
+            {filterPeriod === "DAY" && (
+              <input
+                type="date"
+                value={filterValue}
+                onChange={(e) => setFilterValue(e.target.value)}
+                className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm"
+              />
+            )}
+
+            {filterPeriod === "WEEK" && (
+              <input
+                type="week"
+                value={filterValue}
+                onChange={(e) => setFilterValue(e.target.value)}
+                className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm"
+              />
+            )}
+
+            {filterPeriod === "MONTH" && (
+              <input
+                type="month"
+                value={filterValue}
+                onChange={(e) => setFilterValue(e.target.value)}
+                className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm"
+              />
+            )}
+
+            {filterPeriod === "YEAR" && (
+              <input
+                type="number"
+                min="2000"
+                max="2100"
+                value={filterValue}
+                onChange={(e) => setFilterValue(e.target.value)}
+                className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm"
+                placeholder="Choisir une année"
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="mb-4 flex items-center justify-between text-sm text-black/60">
+          <span>{historicalAppointments.length} rendez-vous trouvé(s)</span>
+          <span>
+            Page {page} sur {totalPages}
+          </span>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-black/60">
@@ -638,14 +875,14 @@ export default function RendezVous() {
                     Chargement des rendez-vous...
                   </td>
                 </tr>
-              ) : appointments.length === 0 ? (
+              ) : historicalAppointments.length === 0 ? (
                 <tr>
                   <td className="py-6 text-black/60" colSpan={6}>
-                    Aucun rendez-vous pour le moment.
+                    Aucun rendez-vous trouvé pour cette période.
                   </td>
                 </tr>
               ) : (
-                appointments.map((a) => {
+                paginatedAppointments.map((a) => {
                   const isActionLoading = actionLoadingId === a.id;
                   const isDetailOpen = selectedAppointment?.id === a.id;
                   const isDetailLoading = detailLoadingId === a.id;
@@ -903,6 +1140,36 @@ export default function RendezVous() {
             </tbody>
           </table>
         </div>
+
+        {!loading && historicalAppointments.length > 0 && (
+          <div className="mt-6 flex flex-col gap-3 border-t border-black/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-black/60">
+              Page {page} sur {totalPages}
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5 disabled:opacity-50"
+              >
+                Précédent
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((prev) => Math.min(totalPages, prev + 1))
+                }
+                disabled={page === totalPages}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5 disabled:opacity-50"
+              >
+                Suivant
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -38,6 +38,7 @@ export default function Patients() {
   const [loadingAppointments, setLoadingAppointments] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
 
   async function loadPatients() {
     try {
@@ -45,10 +46,6 @@ export default function Patients() {
       setError("");
       const data = await getAdminPatients();
       setPatients(data);
-
-      if (data.length > 0 && !selectedPatient) {
-        setSelectedPatient(data[0]);
-      }
     } catch (err) {
       const message =
         err instanceof Error
@@ -63,6 +60,7 @@ export default function Patients() {
   async function loadPatientAppointments(patientId: number) {
     try {
       setLoadingAppointments(true);
+      setError("");
       const data = await getAppointments(`/appointments/?patient=${patientId}`);
       setAppointments(data);
     } catch (err) {
@@ -81,12 +79,27 @@ export default function Patients() {
   }, []);
 
   useEffect(() => {
-    if (selectedPatient) {
+    if (selectedPatient && showHistory) {
       loadPatientAppointments(selectedPatient.id);
     } else {
       setAppointments([]);
     }
-  }, [selectedPatient]);
+  }, [selectedPatient, showHistory]);
+
+  function handleSelectPatient(patient: AdminPatient) {
+    setSelectedPatient(patient);
+    setShowHistory(true);
+    setMessage("");
+    setError("");
+  }
+
+  function handleCloseHistory() {
+    setShowHistory(false);
+    setSelectedPatient(null);
+    setAppointments([]);
+    setMessage("");
+    setError("");
+  }
 
   async function handleDeletePatient() {
     if (!selectedPatient) return;
@@ -109,9 +122,8 @@ export default function Patients() {
         (p) => p.id !== selectedPatient.id,
       );
       setPatients(updatedPatients);
-      setSelectedPatient(
-        updatedPatients.length > 0 ? updatedPatients[0] : null,
-      );
+      setSelectedPatient(null);
+      setShowHistory(false);
       setAppointments([]);
     } catch (err) {
       const message =
@@ -157,17 +169,14 @@ export default function Patients() {
           ) : (
             <div className="mt-4 space-y-3">
               {patients.map((patient) => {
-                const isSelected = selectedPatient?.id === patient.id;
+                const isSelected =
+                  showHistory && selectedPatient?.id === patient.id;
 
                 return (
                   <button
                     key={patient.id}
                     type="button"
-                    onClick={() => {
-                      setSelectedPatient(patient);
-                      setMessage("");
-                      setError("");
-                    }}
+                    onClick={() => handleSelectPatient(patient)}
                     className={`w-full rounded-xl border p-4 text-left transition ${
                       isSelected
                         ? "border-teal-500 bg-teal-50"
@@ -189,88 +198,104 @@ export default function Patients() {
         </section>
 
         <section className="rounded-2xl border border-black/10 bg-white/60 p-6">
-          <div className="flex items-start justify-between gap-4">
+          {!showHistory || !selectedPatient ? (
             <div>
-              <h2 className="text-lg font-semibold">Patient sélectionné</h2>
-              {selectedPatient ? (
-                <div className="mt-2 text-sm text-black/60">
-                  <div>
-                    {selectedPatient.first_name} {selectedPatient.last_name}
-                  </div>
-                  <div>{selectedPatient.email}</div>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-black/60">
-                  Aucun patient sélectionné.
-                </p>
-              )}
+              <h2 className="text-lg font-semibold">Historique du patient</h2>
+              <p className="mt-2 text-sm text-black/60">
+                Sélectionnez un patient dans la liste pour afficher son
+                historique de rendez-vous.
+              </p>
             </div>
+          ) : (
+            <>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold">Patient sélectionné</h2>
+                  <div className="mt-2 text-sm text-black/60">
+                    <div>
+                      {selectedPatient.first_name} {selectedPatient.last_name}
+                    </div>
+                    <div>{selectedPatient.email}</div>
+                  </div>
+                </div>
 
-            {selectedPatient && (
-              <button
-                type="button"
-                onClick={handleDeletePatient}
-                className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-600"
-              >
-                Supprimer
-              </button>
-            )}
-          </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseHistory}
+                    className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-black/5"
+                  >
+                    Fermer
+                  </button>
 
-          <div className="mt-8">
-            <h3 className="text-base font-semibold">Rendez-vous du patient</h3>
-
-            {loadingAppointments ? (
-              <p className="mt-4 text-sm text-black/60">
-                Chargement des rendez-vous...
-              </p>
-            ) : appointments.length === 0 ? (
-              <p className="mt-4 text-sm text-black/60">
-                Aucun rendez-vous trouvé pour ce patient.
-              </p>
-            ) : (
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-black/60">
-                    <tr className="border-b border-black/10">
-                      <th className="py-3 pr-4">Date</th>
-                      <th className="py-3 pr-4">Heure</th>
-                      <th className="py-3 pr-4">Service</th>
-                      <th className="py-3 pr-4">Praticien</th>
-                      <th className="py-3 pr-4">Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {appointments.map((appointment) => (
-                      <tr
-                        key={appointment.id}
-                        className="border-b border-black/5"
-                      >
-                        <td className="py-3 pr-4">
-                          {appointment.appointment_date}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {formatTime(appointment.start_time)}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {appointment.service_name}
-                        </td>
-                        <td className="py-3 pr-4">
-                          Dr {appointment.practitioner_first_name}{" "}
-                          {appointment.practitioner_last_name}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="inline-flex items-center rounded-full border border-black/10 bg-white px-3 py-1 text-xs">
-                            {formatStatus(appointment.status)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  <button
+                    type="button"
+                    onClick={handleDeletePatient}
+                    className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-600"
+                  >
+                    Supprimer
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+
+              <div className="mt-8">
+                <h3 className="text-base font-semibold">
+                  Rendez-vous du patient
+                </h3>
+
+                {loadingAppointments ? (
+                  <p className="mt-4 text-sm text-black/60">
+                    Chargement des rendez-vous...
+                  </p>
+                ) : appointments.length === 0 ? (
+                  <p className="mt-4 text-sm text-black/60">
+                    Aucun rendez-vous trouvé pour ce patient.
+                  </p>
+                ) : (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-black/60">
+                        <tr className="border-b border-black/10">
+                          <th className="py-3 pr-4">Date</th>
+                          <th className="py-3 pr-4">Heure</th>
+                          <th className="py-3 pr-4">Service</th>
+                          <th className="py-3 pr-4">Praticien</th>
+                          <th className="py-3 pr-4">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {appointments.map((appointment) => (
+                          <tr
+                            key={appointment.id}
+                            className="border-b border-black/5"
+                          >
+                            <td className="py-3 pr-4">
+                              {appointment.appointment_date}
+                            </td>
+                            <td className="py-3 pr-4">
+                              {formatTime(appointment.start_time)}
+                            </td>
+                            <td className="py-3 pr-4">
+                              {appointment.service_name}
+                            </td>
+                            <td className="py-3 pr-4">
+                              Dr {appointment.practitioner_first_name}{" "}
+                              {appointment.practitioner_last_name}
+                            </td>
+                            <td className="py-3 pr-4">
+                              <span className="inline-flex items-center rounded-full border border-black/10 bg-white px-3 py-1 text-xs">
+                                {formatStatus(appointment.status)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </section>
       </div>
     </div>

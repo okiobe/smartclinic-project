@@ -62,13 +62,34 @@ async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    const errorMessage =
-      typeof data === "object" &&
-      data !== null &&
-      "detail" in data &&
-      typeof (data as { detail: unknown }).detail === "string"
-        ? (data as { detail: string }).detail
-        : "Une erreur est survenue lors de la requête API.";
+    let errorMessage = "Une erreur est survenue lors de la requête API.";
+
+    if (typeof data === "object" && data !== null) {
+      if (
+        "detail" in data &&
+        typeof (data as { detail: unknown }).detail === "string"
+      ) {
+        errorMessage = (data as { detail: string }).detail;
+      } else {
+        const entries = Object.entries(data as Record<string, unknown>);
+
+        const firstEntry = entries.find(([, value]) => {
+          if (typeof value === "string") return true;
+          if (Array.isArray(value) && typeof value[0] === "string") return true;
+          return false;
+        });
+
+        if (firstEntry) {
+          const [, value] = firstEntry;
+
+          if (typeof value === "string") {
+            errorMessage = value;
+          } else if (Array.isArray(value) && typeof value[0] === "string") {
+            errorMessage = value[0];
+          }
+        }
+      }
+    }
 
     throw new Error(errorMessage);
   }

@@ -119,6 +119,98 @@ class AdminAvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
 
+class PractitionerMyAvailabilityListCreateView(generics.ListCreateAPIView):
+    serializer_class = AvailabilityRuleSerializer
+    permission_classes = [IsPractitionerUserRole]
+
+    def get_practitioner(self):
+        if not hasattr(self.request.user, "practitioner_profile"):
+            raise PermissionDenied("Profil praticien introuvable.")
+        return self.request.user.practitioner_profile
+
+    def get_queryset(self):
+        return AvailabilityRule.objects.filter(
+            practitioner=self.get_practitioner()
+        ).order_by("weekday", "start_time")
+
+    def perform_create(self, serializer):
+        practitioner = self.get_practitioner()
+        availability = serializer.save(practitioner=practitioner)
+
+        log_audit_event(
+            user=self.request.user,
+            action="CREATE",
+            module="availability",
+            object_type="AvailabilityRule",
+            object_id=availability.id,
+            description=(
+                f"Création d'une disponibilité personnelle pour "
+                f"'{practitioner.user.first_name} {practitioner.user.last_name}' : "
+                f"jour {availability.weekday}, "
+                f"{availability.start_time} - {availability.end_time}, "
+                f"actif={availability.is_active}."
+            ),
+        )
+
+
+class PractitionerMyAvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AvailabilityRuleSerializer
+    permission_classes = [IsPractitionerUserRole]
+
+    def get_practitioner(self):
+        if not hasattr(self.request.user, "practitioner_profile"):
+            raise PermissionDenied("Profil praticien introuvable.")
+        return self.request.user.practitioner_profile
+
+    def get_queryset(self):
+        return AvailabilityRule.objects.filter(
+            practitioner=self.get_practitioner()
+        ).select_related("practitioner", "practitioner__user")
+
+    def perform_update(self, serializer):
+        old_instance = self.get_object()
+
+        old_weekday = old_instance.weekday
+        old_start_time = old_instance.start_time
+        old_end_time = old_instance.end_time
+        old_is_active = old_instance.is_active
+
+        availability = serializer.save()
+
+        log_audit_event(
+            user=self.request.user,
+            action="UPDATE",
+            module="availability",
+            object_type="AvailabilityRule",
+            object_id=availability.id,
+            description=(
+                f"Modification par le praticien de la disponibilité #{availability.id} : "
+                f"jour {old_weekday} -> {availability.weekday}, "
+                f"{old_start_time} - {old_end_time} -> "
+                f"{availability.start_time} - {availability.end_time}, "
+                f"actif {old_is_active} -> {availability.is_active}."
+            ),
+        )
+
+    def perform_destroy(self, instance):
+        availability_id = instance.id
+        description = (
+            f"Suppression par le praticien de la disponibilité #{availability_id} : "
+            f"jour {instance.weekday}, {instance.start_time} - {instance.end_time}."
+        )
+
+        instance.delete()
+
+        log_audit_event(
+            user=self.request.user,
+            action="DELETE",
+            module="availability",
+            object_type="AvailabilityRule",
+            object_id=availability_id,
+            description=description,
+        )
+
+
 class PractitionerMyAvailabilityListView(generics.ListAPIView):
     serializer_class = AvailabilityRuleSerializer
     permission_classes = [IsPractitionerUserRole]

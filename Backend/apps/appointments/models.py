@@ -43,6 +43,10 @@ class Appointment(models.Model):
     email_reminder_sent = models.BooleanField(default=False)
     email_reminder_sent_at = models.DateTimeField(null=True, blank=True)
 
+    # Suivi du rappel quotidien SOAP après rendez-vous terminé
+    completed_at = models.DateTimeField(null=True, blank=True)
+    soap_note_reminder_last_sent_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["appointment_date", "start_time"]
 

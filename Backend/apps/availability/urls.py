@@ -3,6 +3,8 @@ from .views import (
     AdminPractitionerAvailabilityListCreateView,
     AdminAvailabilityDetailView,
     PractitionerMyAvailabilityListView,
+    PractitionerMyAvailabilityListCreateView,
+    PractitionerMyAvailabilityDetailView,
 )
 
 urlpatterns = [
@@ -20,5 +22,15 @@ urlpatterns = [
         "practitioner/me/availabilities/",
         PractitionerMyAvailabilityListView.as_view(),
         name="practitioner-my-availabilities",
+    ),
+    path(
+        "practitioner/me/availabilities/manage/",
+        PractitionerMyAvailabilityListCreateView.as_view(),
+        name="practitioner-my-availabilities-manage",
+    ),
+    path(
+        "practitioner/me/availabilities/<int:pk>/",
+        PractitionerMyAvailabilityDetailView.as_view(),
+        name="practitioner-my-availability-detail",
     ),
 ]

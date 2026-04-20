@@ -66,3 +66,19 @@ export async function logoutUser(): Promise<{ message: string }> {
     method: "POST",
   });
 }
+
+export type ChangePasswordFromLoginPayload = {
+  email: string;
+  old_password: string;
+  new_password: string;
+  new_password_confirm: string;
+};
+
+export async function changePasswordFromLogin(
+  payload: ChangePasswordFromLoginPayload,
+): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>("/auth/change-password-from-login/", {
+    method: "POST",
+    body: payload,
+  });
+}

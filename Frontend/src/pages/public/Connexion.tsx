@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authStore } from "../../store/auth.store";
+import { apiRequest } from "../../services/apiClient";
+
+type ChangePasswordForm = {
+  email: string;
+  old_password: string;
+  new_password: string;
+  new_password_confirm: string;
+};
 
 export default function Connexion() {
   const navigate = useNavigate();
@@ -13,6 +21,18 @@ export default function Connexion() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [changePasswordForm, setChangePasswordForm] =
+    useState<ChangePasswordForm>({
+      email: "",
+      old_password: "",
+      new_password: "",
+      new_password_confirm: "",
+    });
+  const [changePasswordError, setChangePasswordError] = useState("");
+  const [changePasswordMessage, setChangePasswordMessage] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
 
@@ -22,6 +42,24 @@ export default function Connexion() {
     }));
 
     if (error) setError("");
+  }
+
+  function handleChangePasswordField(e: React.ChangeEvent<HTMLInputElement>) {
+    const { name, value } = e.target;
+
+    setChangePasswordForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    if (changePasswordError) setChangePasswordError("");
+    if (changePasswordMessage) setChangePasswordMessage("");
+  }
+
+  async function ensureCsrfCookie() {
+    await apiRequest<{ success: string }>("/auth/csrf/", {
+      method: "GET",
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -35,6 +73,8 @@ export default function Connexion() {
     try {
       setIsSubmitting(true);
       setError("");
+
+      await ensureCsrfCookie();
 
       const user = await authStore.login(form.email, form.password);
 
@@ -52,6 +92,70 @@ export default function Connexion() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleChangePasswordSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    const { email, old_password, new_password, new_password_confirm } =
+      changePasswordForm;
+
+    if (!email || !old_password || !new_password || !new_password_confirm) {
+      setChangePasswordError("Veuillez remplir tous les champs.");
+      return;
+    }
+
+    if (new_password !== new_password_confirm) {
+      setChangePasswordError("Les mots de passe ne correspondent pas.");
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      setChangePasswordError("");
+      setChangePasswordMessage("");
+
+      await ensureCsrfCookie();
+
+      const response = await apiRequest<{ message: string }>(
+        "/auth/change-password-from-login/",
+        {
+          method: "POST",
+          body: {
+            email,
+            old_password,
+            new_password,
+            new_password_confirm,
+          },
+        },
+      );
+
+      setChangePasswordMessage(
+        response.message ||
+          "Mot de passe modifié avec succès. Vous pouvez maintenant vous connecter.",
+      );
+
+      setChangePasswordForm({
+        email: "",
+        old_password: "",
+        new_password: "",
+        new_password_confirm: "",
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Impossible de modifier le mot de passe.";
+      setChangePasswordError(message);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  }
+
+  function toggleChangePassword() {
+    setShowChangePassword((prev) => !prev);
+    setChangePasswordError("");
+    setChangePasswordMessage("");
   }
 
   return (
@@ -166,6 +270,103 @@ export default function Connexion() {
                   {isSubmitting ? "Connexion..." : "Se connecter"}
                 </button>
               </form>
+
+              <div className="mt-6 rounded-2xl border border-black/10 bg-white p-4">
+                <button
+                  type="button"
+                  onClick={toggleChangePassword}
+                  className="text-sm font-medium text-teal-600 hover:text-teal-700"
+                >
+                  {showChangePassword
+                    ? "Fermer le formulaire de changement de mot de passe"
+                    : "Changer mon mot de passe"}
+                </button>
+
+                {showChangePassword && (
+                  <form
+                    onSubmit={handleChangePasswordSubmit}
+                    className="mt-4 space-y-4"
+                  >
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        name="email"
+                        value={changePasswordForm.email}
+                        onChange={handleChangePasswordField}
+                        placeholder="Votre email"
+                        className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Ancien mot de passe
+                      </label>
+                      <input
+                        type="password"
+                        name="old_password"
+                        value={changePasswordForm.old_password}
+                        onChange={handleChangePasswordField}
+                        placeholder="Votre ancien mot de passe"
+                        className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Nouveau mot de passe
+                      </label>
+                      <input
+                        type="password"
+                        name="new_password"
+                        value={changePasswordForm.new_password}
+                        onChange={handleChangePasswordField}
+                        placeholder="Votre nouveau mot de passe"
+                        className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Confirmer le nouveau mot de passe
+                      </label>
+                      <input
+                        type="password"
+                        name="new_password_confirm"
+                        value={changePasswordForm.new_password_confirm}
+                        onChange={handleChangePasswordField}
+                        placeholder="Confirmez le nouveau mot de passe"
+                        className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10"
+                      />
+                    </div>
+
+                    {changePasswordError && (
+                      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                        {changePasswordError}
+                      </div>
+                    )}
+
+                    {changePasswordMessage && (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                        {changePasswordMessage}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isChangingPassword}
+                      className="w-full rounded-full border border-teal-500 bg-white px-5 py-3 text-sm font-medium text-teal-600 transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {isChangingPassword
+                        ? "Modification..."
+                        : "Modifier le mot de passe"}
+                    </button>
+                  </form>
+                )}
+              </div>
             </div>
           </section>
         </div>

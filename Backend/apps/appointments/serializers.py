@@ -71,22 +71,18 @@ class AppointmentSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "soap_note")
 
     def update(self, instance, validated_data):
-        # Sauvegarde des anciennes valeurs
         old_date = instance.appointment_date
         old_start_time = instance.start_time
         old_end_time = instance.end_time
 
-        # Mise à jour normale
         instance = super().update(instance, validated_data)
 
-        # Vérifie si le créneau a changé
         schedule_changed = (
             instance.appointment_date != old_date
             or instance.start_time != old_start_time
             or instance.end_time != old_end_time
         )
 
-        # Réinitialisation du rappel si modification du créneau
         if schedule_changed:
             instance.email_reminder_sent = False
             instance.email_reminder_sent_at = None
@@ -123,21 +119,31 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
         if not all([start_time, end_time, practitioner, appointment_date]):
             return attrs
 
-        # Vérification logique horaire
         if start_time >= end_time:
             raise serializers.ValidationError(
                 {"end_time": "L'heure de fin doit être après l'heure de début."}
             )
 
-        # Pas de rendez-vous dans le passé
-        if appointment_date < timezone.now().date():
+        now = timezone.localtime()
+        today = now.date()
+
+        if appointment_date < today:
             raise serializers.ValidationError(
                 {"appointment_date": "Impossible de réserver dans le passé."}
             )
 
+        if appointment_date == today and start_time <= now.time():
+            raise serializers.ValidationError(
+                {
+                    "start_time": (
+                        "Impossible de réserver un rendez-vous pour une heure "
+                        "déjà passée aujourd’hui."
+                    )
+                }
+            )
+
         weekday = appointment_date.isoweekday()
 
-        # Vérification disponibilité
         availability = AvailabilityRule.objects.filter(
             practitioner=practitioner,
             weekday=weekday,
@@ -151,7 +157,6 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
                 {"detail": "Le praticien n'est pas disponible sur ce créneau."}
             )
 
-        # Vérification chevauchement
         overlapping = Appointment.objects.filter(
             practitioner=practitioner,
             appointment_date=appointment_date,

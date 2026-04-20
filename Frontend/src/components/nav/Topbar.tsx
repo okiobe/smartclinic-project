@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { authStore } from "../../store/auth.store";
 
@@ -18,6 +18,13 @@ export default function Topbar() {
       setSearchValue("");
     }
   }, [isAuditPage, searchParams]);
+
+  const greetingName = useMemo(() => {
+    if (!user) return "—";
+
+    const fullName = `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
+    return fullName || user.email || "—";
+  }, [user]);
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,12 +52,10 @@ export default function Topbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-black/10 bg-[#f6f1e8]/80 backdrop-blur">
-      <div className="px-6 py-4 flex items-center justify-between">
+      <div className="flex items-center justify-between px-6 py-4">
         <div>
           <p className="text-xs text-black/60">Portail clinique</p>
-          <p className="text-sm font-semibold">
-            Bonjour, {user?.displayName ?? "—"}
-          </p>
+          <p className="text-sm font-semibold">Bonjour, {greetingName}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -58,7 +63,7 @@ export default function Topbar() {
             <input
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              className="hidden md:block w-[280px] rounded-full border border-black/10 bg-white/60 px-4 py-2 text-sm outline-none focus:border-teal-500"
+              className="hidden w-[280px] rounded-full border border-black/10 bg-white/60 px-4 py-2 text-sm outline-none focus:border-teal-500 md:block"
               placeholder={
                 isAuditPage
                   ? "Rechercher dans l’audit..."

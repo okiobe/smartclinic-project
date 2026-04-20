@@ -1,15 +1,23 @@
+from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
 from .ai_service import generate_soap_from_notes
 from .audio_service import transcribe_audio_file
-
 from apps.audit.utils import log_audit_event
-from .models import Appointment, SoapNote
+from .models import Appointment
 from .serializers import (
     AppointmentSerializer,
     AppointmentCreateSerializer,
     SoapNoteSerializer,
+)
+from .reminders import (
+    send_booking_notifications,
+    notify_practitioner_patient_cancelled,
+    notify_patient_practitioner_cancelled,
+    notify_patient_appointment_confirmed,
+    notify_patient_soap_note_created,
 )
 
 
@@ -83,6 +91,9 @@ class AppointmentListCreateView(AppointmentAccessMixin, generics.ListCreateAPIVi
             ),
         )
 
+        if getattr(self.request.user, "role", None) == "PATIENT":
+            send_booking_notifications(appointment)
+
 
 class AppointmentDetailView(AppointmentAccessMixin, generics.RetrieveAPIView):
     serializer_class = AppointmentSerializer
@@ -104,6 +115,12 @@ class AppointmentStatusUpdateView(AppointmentAccessMixin, APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if getattr(request.user, "role", None) not in {"PRACTITIONER", "ADMIN"}:
+            return Response(
+                {"detail": "Seul le praticien ou l'administrateur peut modifier ce statut."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         new_status = request.data.get("status")
         allowed_statuses = {"PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"}
 
@@ -115,7 +132,19 @@ class AppointmentStatusUpdateView(AppointmentAccessMixin, APIView):
 
         old_status = appointment.status
         appointment.status = new_status
-        appointment.save(update_fields=["status"])
+
+        update_fields = ["status"]
+
+        if new_status == Appointment.Status.COMPLETED:
+            appointment.completed_at = timezone.now()
+            appointment.soap_note_reminder_last_sent_at = None
+            update_fields.extend(["completed_at", "soap_note_reminder_last_sent_at"])
+        elif old_status == Appointment.Status.COMPLETED and new_status != Appointment.Status.COMPLETED:
+            appointment.completed_at = None
+            appointment.soap_note_reminder_last_sent_at = None
+            update_fields.extend(["completed_at", "soap_note_reminder_last_sent_at"])
+
+        appointment.save(update_fields=update_fields)
 
         log_audit_event(
             user=request.user,
@@ -128,6 +157,12 @@ class AppointmentStatusUpdateView(AppointmentAccessMixin, APIView):
                 f"{old_status} -> {new_status}."
             ),
         )
+
+        if old_status != Appointment.Status.CONFIRMED and new_status == Appointment.Status.CONFIRMED:
+            notify_patient_appointment_confirmed(appointment)
+
+        if new_status == Appointment.Status.CANCELLED and getattr(request.user, "role", None) == "PRACTITIONER":
+            notify_patient_practitioner_cancelled(appointment)
 
         return Response(
             AppointmentSerializer(appointment).data,
@@ -153,6 +188,8 @@ class AppointmentCancelView(AppointmentAccessMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        actor_role = getattr(request.user, "role", None)
+
         appointment.status = "CANCELLED"
         appointment.save(update_fields=["status"])
 
@@ -164,6 +201,11 @@ class AppointmentCancelView(AppointmentAccessMixin, APIView):
             object_id=appointment.id,
             description=f"Annulation du rendez-vous #{appointment.id}.",
         )
+
+        if actor_role == "PATIENT":
+            notify_practitioner_patient_cancelled(appointment)
+        elif actor_role == "PRACTITIONER":
+            notify_patient_practitioner_cancelled(appointment)
 
         return Response(
             AppointmentSerializer(appointment).data,
@@ -221,6 +263,9 @@ class AppointmentSoapNoteView(AppointmentAccessMixin, APIView):
         serializer.is_valid(raise_exception=True)
         soap_note = serializer.save(appointment=appointment)
 
+        appointment.soap_note_reminder_last_sent_at = None
+        appointment.save(update_fields=["soap_note_reminder_last_sent_at"])
+
         log_audit_event(
             user=request.user,
             action="CREATE",
@@ -229,6 +274,8 @@ class AppointmentSoapNoteView(AppointmentAccessMixin, APIView):
             object_id=soap_note.id,
             description=f"Création d'une note SOAP pour le rendez-vous #{appointment.id}.",
         )
+
+        notify_patient_soap_note_created(appointment)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

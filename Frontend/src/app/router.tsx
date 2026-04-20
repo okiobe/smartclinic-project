@@ -18,6 +18,8 @@ import PractitionerDashboard from "../pages/praticien/TableauDeBord";
 import PractitionerSchedule from "../pages/praticien/Agenda";
 import PractitionerToday from "../pages/praticien/RendezVousJour";
 import PractitionerAvailability from "../pages/praticien/Disponibilites";
+import PractitionerMedicalRecord from "../pages/praticien/DossierMedical";
+import PractitionerHistory from "../pages/praticien/HistoriqueRendezVous";
 
 import AdminDashboard from "../pages/admin/TableauDeBord";
 import AdminServices from "../pages/admin/Services";
@@ -130,6 +132,22 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute roles={["PRACTITIONER"]}>
             <PractitionerAvailability />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/practitioner/medical-record",
+        element: (
+          <ProtectedRoute roles={["PRACTITIONER"]}>
+            <PractitionerMedicalRecord />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/practitioner/history",
+        element: (
+          <ProtectedRoute roles={["PRACTITIONER"]}>
+            <PractitionerHistory />
           </ProtectedRoute>
         ),
       },

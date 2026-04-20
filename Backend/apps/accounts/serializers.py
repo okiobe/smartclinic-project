@@ -1,4 +1,4 @@
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, password_validation
 from rest_framework import serializers
 
 from .models import User
@@ -78,3 +78,48 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
+
+class ChangePasswordFromLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password_confirm = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        email = attrs.get("email")
+        old_password = attrs.get("old_password")
+        new_password = attrs.get("new_password")
+        new_password_confirm = attrs.get("new_password_confirm")
+
+        if new_password != new_password_confirm:
+            raise serializers.ValidationError(
+                {"new_password_confirm": "Les mots de passe ne correspondent pas."}
+            )
+
+        user = authenticate(
+            request=self.context.get("request"),
+            email=email,
+            password=old_password,
+        )
+
+        if not user:
+            raise serializers.ValidationError(
+                {"old_password": "L'ancien mot de passe est incorrect."}
+            )
+
+        if not user.is_active:
+            raise serializers.ValidationError(
+                {"detail": "Ce compte est désactivé."}
+            )
+
+        password_validation.validate_password(new_password, user=user)
+
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return user

@@ -183,10 +183,13 @@ export async function getMyPractitionerAvailabilities(): Promise<
 export async function createMyPractitionerAvailability(
   payload: CreateAvailabilityPayload,
 ): Promise<AvailabilityRule> {
-  return apiRequest<AvailabilityRule>("/practitioner/me/availabilities/", {
-    method: "POST",
-    body: payload,
-  });
+  return apiRequest<AvailabilityRule>(
+    "/practitioner/me/availabilities/manage/",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
 }
 
 export async function updateMyPractitionerAvailability(

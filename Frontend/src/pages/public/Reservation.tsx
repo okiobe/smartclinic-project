@@ -30,6 +30,19 @@ function getIsoWeekday(dateString: string) {
   return day === 0 ? 7 : day;
 }
 
+function getTodayDateValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getCurrentTimeInMinutes() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
 export default function Reservation() {
   const navigate = useNavigate();
 
@@ -170,6 +183,9 @@ export default function Reservation() {
 
     const duration = chosenService.duration_minutes;
     const slots: string[] = [];
+    const todayDate = getTodayDateValue();
+    const isToday = selectedDate === todayDate;
+    const currentMinutes = getCurrentTimeInMinutes();
 
     dayRules.forEach((rule) => {
       const start = timeToMinutes(rule.start_time);
@@ -190,7 +206,9 @@ export default function Reservation() {
           );
         });
 
-        if (!isOverlapping) {
+        const isPastSlotToday = isToday && current < currentMinutes;
+
+        if (!isOverlapping && !isPastSlotToday) {
           slots.push(slotStart);
         }
       }
@@ -210,6 +228,16 @@ export default function Reservation() {
       !chosenService
     ) {
       setError("Veuillez compléter tous les champs requis.");
+      return;
+    }
+
+    if (
+      selectedDate === getTodayDateValue() &&
+      timeToMinutes(selectedSlot) < getCurrentTimeInMinutes()
+    ) {
+      setError(
+        "Impossible de réserver un rendez-vous pour une heure déjà passée aujourd’hui.",
+      );
       return;
     }
 
@@ -260,8 +288,8 @@ export default function Reservation() {
 
   return (
     <div className="min-h-screen bg-[#f6f1e8] flex items-center justify-center px-6">
-      <div className="bg-white p-8 rounded-2xl shadow-md w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-6">Réserver un rendez-vous</h2>
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md">
+        <h2 className="mb-6 text-xl font-semibold">Réserver un rendez-vous</h2>
 
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -282,7 +310,7 @@ export default function Reservation() {
             <select
               value={selectedService}
               onChange={handleServiceChange}
-              className="border w-full p-3 rounded-xl mb-4"
+              className="mb-4 w-full rounded-xl border p-3"
             >
               <option value="">Choisir un service</option>
               {services.map((s) => (
@@ -295,7 +323,7 @@ export default function Reservation() {
             <select
               value={selectedPractitioner}
               onChange={handlePractitionerChange}
-              className="border w-full p-3 rounded-xl mb-4"
+              className="mb-4 w-full rounded-xl border p-3"
               disabled={!selectedService}
             >
               <option value="">Choisir un praticien</option>
@@ -308,9 +336,10 @@ export default function Reservation() {
 
             <input
               type="date"
+              min={getTodayDateValue()}
               value={selectedDate}
               onChange={handleDateChange}
-              className="border w-full p-3 rounded-xl mb-4"
+              className="mb-4 w-full rounded-xl border p-3"
               disabled={!selectedPractitioner}
             />
 
@@ -323,7 +352,7 @@ export default function Reservation() {
                 <select
                   value={selectedSlot}
                   onChange={(e) => setSelectedSlot(e.target.value)}
-                  className="border w-full p-3 rounded-xl mb-4"
+                  className="mb-4 w-full rounded-xl border p-3"
                 >
                   <option value="">Choisir un créneau</option>
                   {availableSlots.map((slot) => (
@@ -344,7 +373,7 @@ export default function Reservation() {
               onChange={(e) => setReason(e.target.value)}
               placeholder="Motif du rendez-vous (optionnel)"
               rows={3}
-              className="border w-full p-3 rounded-xl mb-6"
+              className="mb-6 w-full rounded-xl border p-3"
             />
 
             <button

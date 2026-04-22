@@ -18,6 +18,7 @@ from .reminders import (
     notify_patient_practitioner_cancelled,
     notify_patient_appointment_confirmed,
     notify_patient_soap_note_created,
+    notify_patient_soap_note_updated,
 )
 
 
@@ -318,6 +319,8 @@ class AppointmentSoapNoteView(AppointmentAccessMixin, APIView):
             object_id=soap_note.id,
             description=f"Modification de la note SOAP du rendez-vous #{appointment.id}.",
         )
+
+        notify_patient_soap_note_updated(appointment)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 

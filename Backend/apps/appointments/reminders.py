@@ -168,12 +168,65 @@ def notify_patient_appointment_confirmed(appointment):
 
 
 def notify_patient_soap_note_created(appointment):
+    patient_user = appointment.patient.user
     practitioner_name = get_display_name(appointment.practitioner.user)
-    message = (
-        f"Une mise à jour de votre dossier médical a été effectuée par {practitioner_name} pour votre "
-        f"rendez-vous du {appointment.appointment_date.strftime('%Y-%m-%d')}."
+    patient_name = get_display_name(patient_user)
+
+    email_message = (
+        f"Bonjour {patient_name},\n\n"
+        f"Votre dossier clinique a été mis à jour suite à l’ajout d’une note SOAP.\n\n"
+        f"Praticien : {practitioner_name}\n"
+        f"Service : {appointment.service.name}\n"
+        f"Date du rendez-vous : {appointment.appointment_date.strftime('%Y-%m-%d')}\n"
+        f"Heure : {appointment.start_time.strftime('%H:%M')}\n\n"
+        f"Merci,\n"
+        f"L'équipe SmartClinic"
     )
-    create_system_notification(appointment, message)
+
+    send_email_notification(
+        appointment=appointment,
+        recipient_email=patient_user.email,
+        subject="Mise à jour de votre dossier clinique - SmartClinic",
+        message=email_message,
+    )
+
+    system_message = (
+        f"Une mise à jour de votre dossier médical a été effectuée par "
+        f"{practitioner_name} pour votre rendez-vous du "
+        f"{appointment.appointment_date.strftime('%Y-%m-%d')}."
+    )
+    create_system_notification(appointment, system_message)
+
+
+def notify_patient_soap_note_updated(appointment):
+    patient_user = appointment.patient.user
+    practitioner_name = get_display_name(appointment.practitioner.user)
+    patient_name = get_display_name(patient_user)
+
+    email_message = (
+        f"Bonjour {patient_name},\n\n"
+        f"Votre dossier clinique a été mis à jour suite à la modification d’une note SOAP.\n\n"
+        f"Praticien : {practitioner_name}\n"
+        f"Service : {appointment.service.name}\n"
+        f"Date du rendez-vous : {appointment.appointment_date.strftime('%Y-%m-%d')}\n"
+        f"Heure : {appointment.start_time.strftime('%H:%M')}\n\n"
+        f"Merci,\n"
+        f"L'équipe SmartClinic"
+    )
+
+    send_email_notification(
+        appointment=appointment,
+        recipient_email=patient_user.email,
+        subject="Mise à jour de votre dossier clinique - SmartClinic",
+        message=email_message,
+    )
+
+    system_message = (
+        f"Une mise à jour de votre dossier médical a été effectuée par "
+        f"{practitioner_name} pour votre rendez-vous du "
+        f"{appointment.appointment_date.strftime('%Y-%m-%d')}."
+    )
+    create_system_notification(appointment, system_message)
 
 
 def get_appointments_to_remind(reference_time=None, tolerance_minutes=30):
@@ -329,16 +382,36 @@ def process_missing_soap_daily_reminders(reference_time=None):
         if last_sent and (reference_time - last_sent) < timedelta(days=1):
             continue
 
+        practitioner_user = appointment.practitioner.user
+        practitioner_name = get_display_name(practitioner_user)
         patient_name = get_display_name(appointment.patient.user)
 
-        message = (
+        email_message = (
+            f"Bonjour {practitioner_name},\n\n"
+            f"Rappel quotidien : aucune note SOAP n'a encore été saisie pour le "
+            f"rendez-vous terminé suivant.\n\n"
+            f"Patient : {patient_name}\n"
+            f"Service : {appointment.service.name}\n"
+            f"Date : {appointment.appointment_date.strftime('%Y-%m-%d')}\n"
+            f"Heure : {appointment.start_time.strftime('%H:%M')}\n\n"
+            f"Merci,\n"
+            f"L'équipe SmartClinic"
+        )
+
+        send_email_notification(
+            appointment=appointment,
+            recipient_email=practitioner_user.email,
+            subject="Rappel note SOAP manquante - SmartClinic",
+            message=email_message,
+        )
+
+        system_message = (
             f"Rappel quotidien : aucune note SOAP n'a encore été saisie pour le "
             f"rendez-vous terminé de {patient_name} du "
             f"{appointment.appointment_date.strftime('%Y-%m-%d')} à "
             f"{appointment.start_time.strftime('%H:%M')}."
         )
-
-        create_system_notification(appointment, message)
+        create_system_notification(appointment, system_message)
 
         appointment.soap_note_reminder_last_sent_at = reference_time
         appointment.save(update_fields=["soap_note_reminder_last_sent_at"])

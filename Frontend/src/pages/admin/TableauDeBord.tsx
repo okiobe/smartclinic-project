@@ -201,6 +201,12 @@ export default function TableauDeBord() {
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<AdminPatient[]>([]);
+  const [services, setServices] = useState<Array<{ id: number; name: string }>>(
+    [],
+  );
+  const [practitioners, setPractitioners] = useState<
+    Array<{ id: number; first_name: string; last_name: string }>
+  >([]);
 
   const today = new Date();
   const initialDay = today.toISOString().slice(0, 10);
@@ -215,6 +221,9 @@ export default function TableauDeBord() {
   const [selectedMonth, setSelectedMonth] = useState(initialMonth);
   const [selectedYear, setSelectedYear] = useState(initialYear);
 
+  const [selectedPractitioner, setSelectedPractitioner] = useState("ALL");
+  const [selectedService, setSelectedService] = useState("ALL");
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -224,20 +233,39 @@ export default function TableauDeBord() {
         setLoading(true);
         setError("");
 
-        const [services, practitioners, patientsData, appointmentsData] =
-          await Promise.all([
-            getAdminServices(),
-            getAdminPractitioners(),
-            getAdminPatients(),
-            getAppointments(),
-          ]);
+        const [
+          servicesData,
+          practitionersData,
+          patientsData,
+          appointmentsData,
+        ] = await Promise.all([
+          getAdminServices(),
+          getAdminPractitioners(),
+          getAdminPatients(),
+          getAppointments(),
+        ]);
 
         setStats({
-          services: services.length,
-          practitioners: practitioners.length,
+          services: servicesData.length,
+          practitioners: practitionersData.length,
           patients: patientsData.length,
           appointments: appointmentsData.length,
         });
+
+        setServices(
+          servicesData.map((service) => ({
+            id: service.id,
+            name: service.name,
+          })),
+        );
+
+        setPractitioners(
+          practitionersData.map((practitioner) => ({
+            id: practitioner.id,
+            first_name: practitioner.first_name,
+            last_name: practitioner.last_name,
+          })),
+        );
 
         setPatients(patientsData);
         setAppointments(appointmentsData);
@@ -261,16 +289,27 @@ export default function TableauDeBord() {
   );
 
   const filteredAppointments = useMemo(() => {
-    return appointments.filter((appointment) =>
-      matchesSelectedPeriod(
-        appointment,
-        selectedPeriod,
-        selectedDay,
-        selectedWeek,
-        selectedMonth,
-        selectedYear,
-      ),
-    );
+    return appointments
+      .filter((appointment) =>
+        matchesSelectedPeriod(
+          appointment,
+          selectedPeriod,
+          selectedDay,
+          selectedWeek,
+          selectedMonth,
+          selectedYear,
+        ),
+      )
+      .filter((appointment) =>
+        selectedPractitioner === "ALL"
+          ? true
+          : String(appointment.practitioner) === selectedPractitioner,
+      )
+      .filter((appointment) =>
+        selectedService === "ALL"
+          ? true
+          : String(appointment.service) === selectedService,
+      );
   }, [
     appointments,
     selectedPeriod,
@@ -278,6 +317,8 @@ export default function TableauDeBord() {
     selectedWeek,
     selectedMonth,
     selectedYear,
+    selectedPractitioner,
+    selectedService,
   ]);
 
   const statusCards = useMemo(
@@ -428,6 +469,28 @@ export default function TableauDeBord() {
     return selectedYear || "Année non sélectionnée";
   }
 
+  function getSelectedPractitionerLabel() {
+    if (selectedPractitioner === "ALL") return "Tous les praticiens";
+
+    const practitioner = practitioners.find(
+      (item) => String(item.id) === selectedPractitioner,
+    );
+
+    if (!practitioner) return "Praticien inconnu";
+
+    return `${practitioner.first_name} ${practitioner.last_name}`;
+  }
+
+  function getSelectedServiceLabel() {
+    if (selectedService === "ALL") return "Tous les services";
+
+    const service = services.find(
+      (item) => String(item.id) === selectedService,
+    );
+
+    return service?.name ?? "Service inconnu";
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-black/10 bg-white/70 p-6 shadow-sm">
@@ -517,10 +580,56 @@ export default function TableauDeBord() {
           </div>
         </div>
 
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-[#0f172a]">
+              Praticien
+            </label>
+            <select
+              value={selectedPractitioner}
+              onChange={(e) => setSelectedPractitioner(e.target.value)}
+              className="w-full rounded-xl border border-black/10 bg-white px-4 py-2 text-sm text-[#0f172a]"
+            >
+              <option value="ALL">Tous les praticiens</option>
+              {practitioners.map((practitioner) => (
+                <option key={practitioner.id} value={String(practitioner.id)}>
+                  {practitioner.first_name} {practitioner.last_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-[#0f172a]">
+              Service
+            </label>
+            <select
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+              className="w-full rounded-xl border border-black/10 bg-white px-4 py-2 text-sm text-[#0f172a]"
+            >
+              <option value="ALL">Tous les services</option>
+              {services.map((service) => (
+                <option key={service.id} value={String(service.id)}>
+                  {service.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="mt-4 rounded-xl border border-dashed border-black/10 bg-[#fcfcfb] px-4 py-3 text-sm text-black/60">
           Filtre actif :{" "}
           <span className="font-medium text-[#0f172a]">
             {renderActiveFilterLabel()}
+          </span>
+          {" • "}
+          <span className="font-medium text-[#0f172a]">
+            {getSelectedPractitionerLabel()}
+          </span>
+          {" • "}
+          <span className="font-medium text-[#0f172a]">
+            {getSelectedServiceLabel()}
           </span>
         </div>
 

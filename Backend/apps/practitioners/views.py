@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.core.mail import send_mail
 from rest_framework import generics, permissions
 
 from apps.audit.utils import log_audit_event
@@ -76,6 +78,30 @@ class AdminPractitionerListCreateView(generics.ListCreateAPIView):
                 f"Création du praticien "
                 f"'{practitioner.user.first_name} {practitioner.user.last_name}'."
             ),
+        )
+
+        full_name = (
+            f"{practitioner.user.first_name} {practitioner.user.last_name}".strip()
+            or practitioner.user.email
+        )
+
+        message = (
+            f"Bonjour {full_name},\n\n"
+            f"Un compte praticien SmartClinic a été créé pour vous.\n\n"
+            f"Email de connexion : {practitioner.user.email}\n"
+            f"Clinique : {practitioner.clinic_name or 'SmartClinic'}\n"
+            f"Spécialité : {practitioner.specialty}\n\n"
+            f"Vous pouvez maintenant vous connecter à la plateforme.\n\n"
+            f"Merci,\n"
+            f"L'équipe SmartClinic"
+        )
+
+        send_mail(
+            subject="Votre compte praticien SmartClinic a été créé",
+            message=message,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=[practitioner.user.email],
+            fail_silently=False,
         )
 
 

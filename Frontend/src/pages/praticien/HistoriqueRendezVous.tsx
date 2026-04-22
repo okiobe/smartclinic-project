@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   getAppointments,
   updateAppointmentSoapNote,
@@ -120,6 +120,8 @@ function getInitialSoapForm(appointment: Appointment): SoapFormState {
 }
 
 export default function HistoriqueRendezVous() {
+  const navigate = useNavigate();
+
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [filterPeriod, setFilterPeriod] = useState<FilterPeriod>("MONTH");
   const [filterValue, setFilterValue] = useState<string>(
@@ -307,6 +309,16 @@ export default function HistoriqueRendezVous() {
     }
   }
 
+  function canCreateSoap(appointment: Appointment) {
+    return appointment.status === "COMPLETED" && !appointment.soap_note;
+  }
+
+  function handleCreateSoapFromHistory(appointmentId: number) {
+    navigate(
+      `/practitioner/medical-record?appointmentId=${appointmentId}&from=history`,
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-black/10 bg-white/60 p-6">
@@ -460,7 +472,7 @@ export default function HistoriqueRendezVous() {
                           : "border-black/10 bg-white hover:bg-black/5"
                       }`}
                     >
-                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="font-medium">
                             {appointment.patient_first_name}{" "}
@@ -476,13 +488,28 @@ export default function HistoriqueRendezVous() {
                           </p>
                         </div>
 
-                        <span
-                          className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(
-                            appointment.status,
-                          )}`}
-                        >
-                          {formatStatus(appointment.status)}
-                        </span>
+                        <div className="flex flex-col items-start gap-2 md:items-end">
+                          <span
+                            className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(
+                              appointment.status,
+                            )}`}
+                          >
+                            {formatStatus(appointment.status)}
+                          </span>
+
+                          {canCreateSoap(appointment) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCreateSoapFromHistory(appointment.id);
+                              }}
+                              className="rounded-full bg-teal-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-teal-600"
+                            >
+                              Rédiger la note SOAP
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
